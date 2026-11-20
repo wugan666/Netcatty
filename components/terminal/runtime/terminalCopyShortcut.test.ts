@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   isPlainCtrlCInterruptChord,
+  isPlainCtrlVPasteChord,
   isPlainMetaCCopyChord,
   shouldPassThroughCopyShortcut,
+  windowsStyleClipboardKeyAction,
 } from "./terminalCopyShortcut.ts";
 
 const keyboardEvent = (
@@ -83,4 +85,33 @@ test("plain Cmd+C copy passthrough follows the physical C key on non-Latin layou
 
   assert.equal(isPlainMetaCCopyChord(event), true);
   assert.equal(shouldPassThroughCopyShortcut("copy", false, event), true);
+});
+
+test("Windows-style clipboard keys paste on plain Ctrl+V only", () => {
+  const ctrlV = keyboardEvent("v", "KeyV", { ctrlKey: true });
+  assert.equal(isPlainCtrlVPasteChord(ctrlV), true);
+  assert.equal(windowsStyleClipboardKeyAction(ctrlV, { enabled: true, hasSelection: false }), "paste");
+  assert.equal(windowsStyleClipboardKeyAction(ctrlV, { enabled: false, hasSelection: false }), null);
+  assert.equal(
+    windowsStyleClipboardKeyAction(
+      keyboardEvent("V", "KeyV", { ctrlKey: true, shiftKey: true }),
+      { enabled: true, hasSelection: false },
+    ),
+    null,
+  );
+  assert.equal(
+    windowsStyleClipboardKeyAction(
+      keyboardEvent("v", "KeyV", { ctrlKey: true, altKey: true }),
+      { enabled: true, hasSelection: false },
+    ),
+    null,
+  );
+});
+
+test("Windows-style clipboard keys copy on Ctrl+C only while text is selected", () => {
+  const ctrlC = keyboardEvent("c", "KeyC", { ctrlKey: true });
+  assert.equal(windowsStyleClipboardKeyAction(ctrlC, { enabled: true, hasSelection: true }), "copy");
+  // No selection: Ctrl+C must stay an interrupt.
+  assert.equal(windowsStyleClipboardKeyAction(ctrlC, { enabled: true, hasSelection: false }), null);
+  assert.equal(windowsStyleClipboardKeyAction(ctrlC, { enabled: false, hasSelection: true }), null);
 });

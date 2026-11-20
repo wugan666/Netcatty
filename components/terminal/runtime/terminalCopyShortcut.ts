@@ -15,6 +15,37 @@ export function isPlainCtrlCInterruptChord(e: CopyShortcutKeyEvent): boolean {
     && isPhysicalCKey(e);
 }
 
+function isPhysicalVKey(e: CopyShortcutKeyEvent): boolean {
+  return e.key.toLowerCase() === "v" || e.code === "KeyV";
+}
+
+/** Plain Ctrl+V — the Windows Terminal / conhost paste chord. */
+export function isPlainCtrlVPasteChord(e: CopyShortcutKeyEvent): boolean {
+  return e.ctrlKey
+    && !e.shiftKey
+    && !e.altKey
+    && !e.metaKey
+    && isPhysicalVKey(e);
+}
+
+export type WindowsStyleClipboardKeyAction = "paste" | "copy" | null;
+
+/**
+ * Windows Terminal / conhost key feel (opt-in per platform, see
+ * resolveWindowsStyleCopyPaste): plain Ctrl+V pastes, and plain Ctrl+C copies
+ * while text is selected. Without a selection Ctrl+C stays an interrupt, so
+ * this returns null and the normal SIGINT path runs.
+ */
+export function windowsStyleClipboardKeyAction(
+  e: CopyShortcutKeyEvent,
+  options: { enabled: boolean; hasSelection: boolean },
+): WindowsStyleClipboardKeyAction {
+  if (!options.enabled) return null;
+  if (isPlainCtrlVPasteChord(e)) return "paste";
+  if (options.hasSelection && isPlainCtrlCInterruptChord(e)) return "copy";
+  return null;
+}
+
 /** macOS Cmd+C / Super+C — forward when there is no xterm selection. */
 export function isPlainMetaCCopyChord(e: CopyShortcutKeyEvent): boolean {
   return e.metaKey
