@@ -10,11 +10,29 @@ type ClipboardImageFile = {
 export type RemoteClipboardImageBridge = Pick<
   NetcattyBridge,
   "readClipboardImage" | "openSftpForSession" | "startStreamTransfer"
-> & Pick<Partial<NetcattyBridge>, "closeSftp" | "deleteTempFile">;
+> & Pick<Partial<NetcattyBridge>, "closeSftp" | "deleteTempFile" | "getSftpHomeDir">;
 
 type TerminalLike = {
   focus?: () => void;
+  modes?: { bracketedPasteMode?: boolean };
+  options?: { ignoreBracketedPasteMode?: boolean };
 };
+
+const BRACKETED_PASTE_START = "\x1b[200~";
+const BRACKETED_PASTE_END = "\x1b[201~";
+
+/**
+ * Wrap the uploaded image path as a bracketed paste when the remote program
+ * asked for it. Agent CLIs (Claude Code, Codex, …) only turn an image path
+ * into an attachment when it arrives as a *paste*; the same bytes delivered
+ * as plain keystrokes are inserted as literal text. Mirrors xterm's own
+ * `paste()` gating so "disable bracketed paste" keeps working.
+ */
+export function wrapRemoteImagePathForPaste(pastedPath: string, term?: TerminalLike | null): string {
+  const bracketed =
+    term?.modes?.bracketedPasteMode === true && term.options?.ignoreBracketedPasteMode !== true;
+  return bracketed ? `${BRACKETED_PASTE_START}${pastedPath}${BRACKETED_PASTE_END}` : pastedPath;
+}
 
 type HandleRemoteClipboardImagePasteOptions = {
   bridge?: RemoteClipboardImageBridge;
@@ -106,12 +124,20 @@ export async function handleRemoteClipboardImageUpload({
 
   let sftpId: string | undefined;
   try {
-    const remoteCwd = await getRemoteCwd();
-    const targetPath = buildRemoteClipboardImagePath(remoteCwd, image.name);
-    if (!targetPath) return { ok: false, reason: "no-cwd" };
+    const remoteCwd = await getRemoteCwd().catch(() => undefined);
     const transferId = createTransferId();
 
     sftpId = await bridge.openSftpForSession(sessionId);
+    let targetPath = buildRemoteClipboardImagePath(remoteCwd, image.name);
+    if (!targetPath && bridge.getSftpHomeDir) {
+      // The shell cwd cannot always be resolved (a full-screen agent CLI owns
+      // the prompt, cwd probing is disabled for the host, …). Fall back to the
+      // login directory so the paste still works instead of failing outright.
+      const home = await bridge.getSftpHomeDir(sftpId).catch(() => null);
+      const homeDir = home?.success && home.homeDir?.startsWith("/") ? home.homeDir : undefined;
+      targetPath = buildRemoteClipboardImagePath(homeDir, image.name);
+    }
+    if (!targetPath) return { ok: false, reason: "no-cwd" };
     const transferResult = await bridge.startStreamTransfer({
       transferId,
       sourcePath: image.path,
@@ -124,7 +150,7 @@ export async function handleRemoteClipboardImageUpload({
     if (!transferResult || transferResult.error) return { ok: false, reason: "upload-failed" };
 
     const pastedPath = quoteRemotePathForShell(targetPath);
-    terminalBackend.writeToSession(sessionId, pastedPath, {
+    terminalBackend.writeToSession(sessionId, wrapRemoteImagePathForPaste(pastedPath, term), {
       sensitive: isSensitiveInput?.() === true,
     });
     scrollToBottomAfterProgrammaticInput?.(pastedPath);

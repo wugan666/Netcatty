@@ -166,6 +166,7 @@ import {
   migrateIncomingTerminalFontId,
   migrateMaterializedAutoCloseOnExitDefault,
   migrateMaterializedShiftEnterNewlineDefault,
+  migrateMaterializedAutoUploadClipboardImageDefault,
   readStoredString,
   serializeTerminalSettings,
   type HostClickBehavior,
@@ -403,6 +404,7 @@ export const useSettingsState = (options: { enableSettingsSync?: boolean; enable
     // it is ingested; afterwards stored values are the user's own and win.
     migrateMaterializedAutoCloseOnExitDefault();
     migrateMaterializedShiftEnterNewlineDefault();
+    migrateMaterializedAutoUploadClipboardImageDefault();
     const stored = localStorageAdapter.read<TerminalSettings>(STORAGE_KEY_TERM_SETTINGS);
     return normalizeTerminalSettings(stored);
   });

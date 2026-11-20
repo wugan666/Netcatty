@@ -6,6 +6,7 @@ import {
   getRemoteClipboardImageUploadErrorMessageKey,
   handleRemoteClipboardImageUpload,
   quoteRemotePathForShell,
+  wrapRemoteImagePathForPaste,
 } from "./clipboardImagePaste";
 
 test("remote clipboard image path is placed under the current directory", () => {
@@ -159,13 +160,12 @@ test("remote clipboard image upload skips upload without a reliable cwd", async 
         mediaType: "image/png",
         size: 12,
       }),
-      openSftpForSession: async () => {
-        assert.fail("should not open SFTP without cwd");
-      },
+      openSftpForSession: async () => "sftp-1",
       startStreamTransfer: async (options) => {
         transferPayloads.push(options);
         return { transferId: options.transferId };
       },
+      getSftpHomeDir: async () => ({ success: false, error: "no home" }),
       deleteTempFile: async (filePath) => {
         deletedTempFile = filePath;
         return { success: true };
@@ -282,5 +282,90 @@ test("remote clipboard image upload result maps to user-facing message keys", ()
       pastedPath: "/tmp/image.png",
     }),
     null,
+  );
+});
+
+test("remote clipboard image upload falls back to the home directory when cwd is unknown", async () => {
+  const writes: string[] = [];
+  const transferTargets: string[] = [];
+
+  const result = await handleRemoteClipboardImageUpload({
+    bridge: {
+      readClipboardImage: async () => ({
+        path: "/tmp/netcatty/shot.png",
+        name: "shot.png",
+        mediaType: "image/png",
+        size: 12,
+      }),
+      openSftpForSession: async () => "sftp-1",
+      getSftpHomeDir: async (sftpId) => {
+        assert.equal(sftpId, "sftp-1");
+        return { success: true, homeDir: "/home/alice" };
+      },
+      startStreamTransfer: async (options) => {
+        transferTargets.push(options.targetPath);
+        return { transferId: options.transferId };
+      },
+    },
+    getRemoteCwd: async () => {
+      throw new Error("cwd probe failed");
+    },
+    sessionId: "session-1",
+    terminalBackend: {
+      writeToSession: (_sessionId, data) => writes.push(data),
+    },
+  });
+
+  const expected = "/home/alice/.netcatty-paste-images/shot.png";
+  assert.deepEqual(result, { ok: true, remotePath: expected, pastedPath: expected });
+  assert.deepEqual(transferTargets, [expected]);
+  assert.deepEqual(writes, [expected]);
+});
+
+test("remote clipboard image path is sent as a bracketed paste when the remote program enabled it", async () => {
+  const writes: string[] = [];
+  const scrolled: string[] = [];
+
+  const result = await handleRemoteClipboardImageUpload({
+    bridge: {
+      readClipboardImage: async () => ({
+        path: "/tmp/netcatty/shot.png",
+        name: "shot.png",
+        mediaType: "image/png",
+        size: 12,
+      }),
+      openSftpForSession: async () => "sftp-1",
+      startStreamTransfer: async (options) => ({ transferId: options.transferId }),
+    },
+    getRemoteCwd: async () => "/srv/app",
+    scrollToBottomAfterProgrammaticInput: (data) => scrolled.push(data),
+    sessionId: "session-1",
+    terminalBackend: {
+      writeToSession: (_sessionId, data) => writes.push(data),
+    },
+    // Agent CLIs (Claude Code, Codex) only attach an image path that arrives
+    // as a paste; plain keystrokes are inserted as literal text.
+    term: { modes: { bracketedPasteMode: true }, options: {} },
+  });
+
+  const remotePath = "/srv/app/.netcatty-paste-images/shot.png";
+  assert.deepEqual(writes, [`\x1b[200~${remotePath}\x1b[201~`]);
+  assert.deepEqual(scrolled, [remotePath]);
+  assert.deepEqual(result, { ok: true, remotePath, pastedPath: remotePath });
+});
+
+test("remote image path paste wrapping follows the terminal bracketed paste state", () => {
+  assert.equal(wrapRemoteImagePathForPaste("/a.png", null), "/a.png");
+  assert.equal(wrapRemoteImagePathForPaste("/a.png", { modes: { bracketedPasteMode: false } }), "/a.png");
+  assert.equal(
+    wrapRemoteImagePathForPaste("/a.png", {
+      modes: { bracketedPasteMode: true },
+      options: { ignoreBracketedPasteMode: true },
+    }),
+    "/a.png",
+  );
+  assert.equal(
+    wrapRemoteImagePathForPaste("/a.png", { modes: { bracketedPasteMode: true }, options: {} }),
+    "\x1b[200~/a.png\x1b[201~",
   );
 });

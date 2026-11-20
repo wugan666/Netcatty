@@ -11,6 +11,7 @@ import {
   migrateIncomingTerminalFontId,
   migrateMaterializedAutoCloseOnExitDefault,
   migrateMaterializedShiftEnterNewlineDefault,
+  migrateMaterializedAutoUploadClipboardImageDefault,
 } from "./settingsStateDefaults.ts";
 import { TERMINAL_FONT_AUTO } from "../../infrastructure/config/fonts.ts";
 import {
@@ -18,6 +19,7 @@ import {
   STORAGE_KEY_TERM_FONT_FAMILY,
   STORAGE_KEY_TERM_SETTINGS,
   STORAGE_KEY_TERM_SHIFT_ENTER_NEWLINE_MIGRATED,
+  STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED,
 } from "../../infrastructure/config/storageKeys.ts";
 import type { UiThemeTokens } from "../../infrastructure/config/uiThemes.ts";
 
@@ -285,6 +287,45 @@ test("migrateMaterializedShiftEnterNewlineDefault leaves a fresh install without
     migrateMaterializedShiftEnterNewlineDefault();
     assert.equal(store.has(STORAGE_KEY_TERM_SETTINGS), false);
     assert.equal(store.get(STORAGE_KEY_TERM_SHIFT_ENTER_NEWLINE_MIGRATED), "true");
+  } finally {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
+test("migrateMaterializedAutoUploadClipboardImageDefault enables the old opt-in default once", () => {
+  const store = installMemoryLocalStorage();
+  try {
+    store.set(
+      STORAGE_KEY_TERM_SETTINGS,
+      JSON.stringify({ scrollback: 3000, autoUploadClipboardImageOnPaste: false }),
+    );
+    migrateMaterializedAutoUploadClipboardImageDefault();
+    const migrated = JSON.parse(store.get(STORAGE_KEY_TERM_SETTINGS)!);
+    assert.equal(migrated.autoUploadClipboardImageOnPaste, true);
+    assert.equal(migrated.scrollback, 3000);
+    assert.equal(store.get(STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED), "true");
+
+    // A later explicit "off" is the user's own choice and must survive.
+    store.set(
+      STORAGE_KEY_TERM_SETTINGS,
+      JSON.stringify({ scrollback: 3000, autoUploadClipboardImageOnPaste: false }),
+    );
+    migrateMaterializedAutoUploadClipboardImageDefault();
+    assert.equal(
+      JSON.parse(store.get(STORAGE_KEY_TERM_SETTINGS)!).autoUploadClipboardImageOnPaste,
+      false,
+    );
+  } finally {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
+test("migrateMaterializedAutoUploadClipboardImageDefault leaves a fresh install without a settings blob", () => {
+  const store = installMemoryLocalStorage();
+  try {
+    migrateMaterializedAutoUploadClipboardImageDefault();
+    assert.equal(store.has(STORAGE_KEY_TERM_SETTINGS), false);
+    assert.equal(store.get(STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED), "true");
   } finally {
     delete (globalThis as { localStorage?: unknown }).localStorage;
   }

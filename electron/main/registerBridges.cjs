@@ -1202,7 +1202,7 @@ function createBridgeRegistrar(context) {
     });
 
     ipcMain.handle("netcatty:clipboard:readImage", async () => {
-      return await readClipboardImage({ clipboard, fsImpl: fs, tempDirBridge });
+      return await readClipboardImage({ clipboard, fsImpl: fs, pathImpl: path, tempDirBridge });
     });
 
     ipcMain.handle("netcatty:clipboard:hasImage", async () => {

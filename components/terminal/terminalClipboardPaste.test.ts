@@ -99,7 +99,7 @@ test("terminal user paste auto-uploads a clipboard image in remote sessions", as
     isLocalConnection: false,
     readClipboardText: async () => {
       readTextCalls.push("read");
-      return "hello";
+      return "";
     },
     sessionId: "session-1",
     terminalBackend: {
@@ -112,7 +112,7 @@ test("terminal user paste auto-uploads a clipboard image in remote sessions", as
   });
 
   assert.deepEqual(writes, [{ data: "/home/alice/.netcatty-paste-images/shot.png" }]);
-  assert.deepEqual(readTextCalls, []);
+  assert.deepEqual(readTextCalls, ["read"]);
 });
 
 test("terminal user paste falls back to text when the clipboard holds no image", async () => {
@@ -174,7 +174,7 @@ test("terminal user paste reports failed uploads instead of pasting text", async
     onClipboardImageUploadResult: (result) => results.push(result),
     readClipboardText: async () => {
       readTextCalls.push("read");
-      return "hello";
+      return "";
     },
     sessionId: "session-1",
     terminalBackend: {
@@ -187,7 +187,7 @@ test("terminal user paste reports failed uploads instead of pasting text", async
   });
 
   assert.deepEqual(results, [{ ok: false, reason: "upload-failed" }]);
-  assert.deepEqual(readTextCalls, []);
+  assert.deepEqual(readTextCalls, ["read"]);
 });
 
 test("terminal user paste reports thrown upload failures instead of pasting text", async () => {
@@ -217,7 +217,7 @@ test("terminal user paste reports thrown upload failures instead of pasting text
     onClipboardImageUploadResult: (result) => results.push(result),
     readClipboardText: async () => {
       readTextCalls.push("read");
-      return "hello";
+      return "";
     },
     sessionId: "session-1",
     terminalBackend: {
@@ -230,7 +230,7 @@ test("terminal user paste reports thrown upload failures instead of pasting text
   });
 
   assert.deepEqual(results, [{ ok: false, reason: "upload-failed" }]);
-  assert.deepEqual(readTextCalls, []);
+  assert.deepEqual(readTextCalls, ["read"]);
 });
 
 test("terminal user paste keeps local file path paste even with auto-upload enabled", async () => {
@@ -946,4 +946,34 @@ test("without the bypass, a paste confirmed at a sensitive prompt still broadcas
   } finally {
     dispose();
   }
+});
+
+test("terminal user paste prefers clipboard text over an accompanying image in remote sessions", async () => {
+  const pasted: string[] = [];
+
+  await handleTerminalClipboardPaste({
+    bridge: {
+      readClipboardFiles: async () => [],
+    },
+    autoUploadClipboardImage: true,
+    clipboardImageBridge: {
+      // Office apps / browsers put a rendered bitmap next to the copied text.
+      readClipboardImage: async () => assert.fail("text clipboard must not read or upload the image"),
+      openSftpForSession: async () => assert.fail("text clipboard must not open SFTP"),
+      startStreamTransfer: async () => assert.fail("text clipboard must not upload"),
+    },
+    getRemoteCwd: async () => "/home/alice",
+    isLocalConnection: false,
+    readClipboardText: async () => "A1\tB1",
+    sessionId: "session-1",
+    terminalBackend: {
+      writeToSession: () => assert.fail("text clipboard should paste text, not a remote path"),
+    },
+    term: {
+      paste: (text) => pasted.push(text),
+      scrollToBottom: () => {},
+    },
+  });
+
+  assert.deepEqual(pasted, ["A1\tB1"]);
 });
