@@ -374,6 +374,13 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
     sectionKey: "settings.terminal.section.behavior",
   },
   {
+    id: "terminal-windows-style-copy-paste",
+    tab: "terminal",
+    labelKey: "settings.terminal.behavior.windowsStyleCopyPaste",
+    descriptionKey: "settings.terminal.behavior.windowsStyleCopyPaste.desc",
+    sectionKey: "settings.terminal.section.behavior",
+  },
+  {
     id: "terminal-confirm-multiline-paste",
     tab: "terminal",
     labelKey: "settings.terminal.behavior.confirmMultilinePaste",

@@ -1,5 +1,7 @@
 import React from "react";
 import { DEFAULT_TERMINAL_WORD_SEPARATORS } from "../../../domain/models";
+import { resolveWindowsStyleCopyPaste } from "../../../domain/models/terminal";
+import { isWindowsPlatform } from "../../../lib/utils";
 import type { DisconnectedNoticeMode, DynamicTabTitleMode, LinkModifier, MiddleClickBehavior, OscNotificationMode, RightClickBehavior, TerminalSettings, TerminalTabDoubleClickBehavior } from "../../../domain/models";
 import { Input } from "../../ui/input";
 import { Label } from "../../ui/label";
@@ -175,8 +177,19 @@ export const TerminalBehaviorSettings: React.FC<TerminalBehaviorSettingsProps> =
           description={t("settings.terminal.behavior.autoUploadClipboardImage.desc")}
         >
           <Toggle
-            checked={terminalSettings.autoUploadClipboardImageOnPaste ?? false}
+            checked={terminalSettings.autoUploadClipboardImageOnPaste ?? true}
             onChange={(v) => updateTerminalSetting("autoUploadClipboardImageOnPaste", v)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          anchorId="terminal-windows-style-copy-paste"
+          label={t("settings.terminal.behavior.windowsStyleCopyPaste")}
+          description={t("settings.terminal.behavior.windowsStyleCopyPaste.desc")}
+        >
+          <Toggle
+            checked={resolveWindowsStyleCopyPaste(terminalSettings.windowsStyleCopyPaste, isWindowsPlatform())}
+            onChange={(v) => updateTerminalSetting("windowsStyleCopyPaste", v)}
           />
         </SettingRow>
 

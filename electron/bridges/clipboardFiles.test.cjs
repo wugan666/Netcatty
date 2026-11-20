@@ -305,3 +305,68 @@ test("hasClipboardImage is false when clipboard API is unavailable", () => {
   assert.equal(hasClipboardImage({ clipboard: null }), false);
   assert.equal(hasClipboardImage({ clipboard: {} }), false);
 });
+
+test("reads a copied image file from the clipboard as a staged temp copy", async () => {
+  const copies = [];
+  const result = await readClipboardImage({
+    clipboard: {
+      availableFormats: () => ["FileNameW"],
+      readBuffer: () => Buffer.from("C:\\Users\\me\\Pictures\\Shot 1.JPG\0\0", "utf16le"),
+      // Explorer can attach a thumbnail bitmap; the file must still win.
+      readImage: () => assert.fail("a copied image file should not fall back to the bitmap"),
+    },
+    fsImpl: {
+      ...createFs({ "C:\\Users\\me\\Pictures\\Shot 1.JPG": "file" }),
+      promises: {
+        copyFile: async (from, to) => copies.push({ from, to }),
+        writeFile: async () => assert.fail("a copied image file must be copied, not re-encoded"),
+      },
+    },
+    tempDirBridge: {
+      getTempFilePath: (name) => `/netcatty-temp/${name}`,
+    },
+    now: () => new Date(2026, 5, 11, 3, 4, 5, 6),
+  });
+
+  assert.deepEqual(result, {
+    path: "/netcatty-temp/netcatty-paste-20260611-030405-006.jpg",
+    name: "netcatty-paste-20260611-030405-006.jpg",
+    mediaType: "image/jpeg",
+    size: 42,
+  });
+  assert.deepEqual(copies, [
+    {
+      from: "C:\\Users\\me\\Pictures\\Shot 1.JPG",
+      to: "/netcatty-temp/netcatty-paste-20260611-030405-006.jpg",
+    },
+  ]);
+});
+
+test("ignores copied non-image files and multi-file clipboards for image paste", async () => {
+  const tempDirBridge = { getTempFilePath: (name) => `/netcatty-temp/${name}` };
+  const fsImpl = {
+    ...createFs({
+      "C:\\a.txt": "file",
+      "C:\\a.png": "file",
+      "C:\\b.png": "file",
+    }),
+    promises: {
+      copyFile: async () => assert.fail("nothing should be staged"),
+      writeFile: async () => assert.fail("nothing should be staged"),
+    },
+  };
+  const clipboardWith = (paths) => ({
+    availableFormats: () => ["FileNameW"],
+    readBuffer: () => Buffer.from(`${paths.join("\0")}\0\0`, "utf16le"),
+    readImage: () => ({ isEmpty: () => true }),
+  });
+
+  assert.equal(
+    await readClipboardImage({ clipboard: clipboardWith(["C:\\a.txt"]), fsImpl, tempDirBridge }),
+    null,
+  );
+  assert.equal(
+    await readClipboardImage({ clipboard: clipboardWith(["C:\\a.png", "C:\\b.png"]), fsImpl, tempDirBridge }),
+    null,
+  );
+});

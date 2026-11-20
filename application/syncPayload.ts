@@ -288,7 +288,7 @@ const SYNCABLE_TERMINAL_KEYS = [
   'rightClickBehavior', 'rightClickLongPressMenu', 'showContextMenuOverFullscreenApps', 'middleClickBehavior', 'copyOnSelect', 'normalizeTextOnCopy', 'middleClickPaste', 'wordSeparators',
   'linkModifier', 'keywordHighlightEnabled', 'keywordHighlightRules',
   'keepaliveInterval', 'keepaliveCountMax', 'disableBracketedPaste', 'clearWipesScrollback',
-  'autoUploadClipboardImageOnPaste',
+  'autoUploadClipboardImageOnPaste', 'windowsStyleCopyPaste',
   'confirmBeforeMultilinePaste', 'multilinePasteConfirmMinLines',
   'preserveSelectionOnInput', 'forcePromptNewLine', 'osc52Clipboard', 'oscNotifications', 'dynamicTabTitleMode', 'tabDoubleClickBehavior',
   'autoCloseOnExit', 'disconnectedNoticeMode',

@@ -25,7 +25,7 @@ import { KeywordHighlighter } from "../keywordHighlight";
 import { installSearchDecorationTracker } from "../hooks/useTerminalSearch";
 import { CursorLineHighlighter } from "./cursorLineHighlight";
 import { resolveCursorLineHighlightBackground } from "../../../domain/cursorLineHighlight";
-import { normalizeCursorBarWidth } from "../../../domain/models/terminal";
+import { normalizeCursorBarWidth, resolveWindowsStyleCopyPaste } from "../../../domain/models/terminal";
 import {
   registerPluginTerminalLinkProvider,
   type PluginTerminalLinkProviderHost,
@@ -60,7 +60,7 @@ import { resolveFontWeightBold } from "../../../lib/fontWeightAvailability";
 import { isPluginHostProtocol } from "../../../domain/pluginConnection";
 import { resolveTerminalFontFamilyId } from "../../../infrastructure/config/fonts";
 import { logger } from "../../../lib/logger";
-import { isMacPlatform } from "../../../lib/utils";
+import { isMacPlatform, isWindowsPlatform } from "../../../lib/utils";
 import { netcattyBridge } from "../../../infrastructure/services/netcattyBridge";
 import {
   clearTerminalViewportAndSyncPty,
@@ -181,7 +181,7 @@ import {
   nextOutputHistoryPreviewTop,
   type TerminalOutputHistoryPreview,
 } from "./terminalOutputHistory";
-import { shouldPassThroughCopyShortcut } from "./terminalCopyShortcut";
+import { shouldPassThroughCopyShortcut, windowsStyleClipboardKeyAction } from "./terminalCopyShortcut";
 import {
   isMacCommandPeriodInterruptChord,
   shouldUseUrgentTerminalInterrupt,
@@ -2531,6 +2531,38 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
           }
         }
       }
+    }
+
+    // Windows Terminal / conhost key feel: plain Ctrl+V pastes (instead of
+    // sending ^V, which leaves remote agent CLIs probing an empty remote
+    // clipboard) and plain Ctrl+C copies an active selection. Claimed before
+    // Kitty/Win32 or xterm can encode the chord; configured app and snippet
+    // shortcuts above keep precedence.
+    const windowsClipboardAction = windowsStyleClipboardKeyAction(e, {
+      enabled: resolveWindowsStyleCopyPaste(
+        ctx.terminalSettingsRef.current?.windowsStyleCopyPaste,
+        isWindowsPlatform(),
+      ),
+      hasSelection: hasCopyableSelection,
+    });
+    if (windowsClipboardAction === "paste") {
+      e.preventDefault();
+      e.stopPropagation();
+      void ctx.terminalContextActionsRef?.current?.onPaste?.();
+      return false;
+    }
+    if (windowsClipboardAction === "copy") {
+      e.preventDefault();
+      e.stopPropagation();
+      const selection = previewSelection || getTerminalSelectionForClipboard(
+        term,
+        ctx.terminalSettingsRef.current?.normalizeTextOnCopy ?? true,
+      );
+      if (selection) void navigator.clipboard.writeText(selection);
+      // Like Windows Terminal, copying dismisses the selection so the next
+      // Ctrl+C is an interrupt again.
+      term.clearSelection();
+      return false;
     }
 
     // Sogou/macOS CJK punctuation: keydown still reports ASCII "," while the
