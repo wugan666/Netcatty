@@ -226,38 +226,6 @@ export async function handleTerminalClipboardPaste({
   terminalBackend,
   term,
 }: TerminalClipboardPasteOptions): Promise<void> {
-  // Image-first: when enabled and a remote session is active, a clipboard
-  // image triggers the SFTP upload flow. "no-image" means the clipboard
-  // holds text/files instead, so we silently continue to the normal paste.
-  if (autoUploadClipboardImage && sessionId && !isLocalConnection) {
-    try {
-      const result = await handleRemoteClipboardImageUpload({
-        bridge: clipboardImageBridge,
-        getRemoteCwd: getRemoteCwd ?? (async () => undefined),
-        isSensitiveInput,
-        sessionId,
-        terminalBackend,
-        term,
-        scrollToBottomAfterProgrammaticInput,
-      });
-      if (result.ok === true) {
-        onClipboardImageUploadResult?.(result);
-        return;
-      }
-      if (result.reason !== "no-image" && result.reason !== "unsupported") {
-        onClipboardImageUploadResult?.(result);
-        return;
-      }
-    } catch {
-      // The clipboard image was already read successfully above, so any throw
-      // here means the upload itself failed (e.g. SFTP cannot be opened for
-      // the session). Surface the same error as the context-menu action
-      // instead of silently pasting unrelated clipboard content.
-      onClipboardImageUploadResult?.({ ok: false, reason: "upload-failed" });
-      return;
-    }
-  }
-
   const readClipboardFiles = bridge?.readClipboardFiles;
   if (isLocalConnection && readClipboardFiles) {
     try {
@@ -304,6 +272,41 @@ export async function handleTerminalClipboardPaste({
       term,
     });
     return;
+  }
+
+  // Text wins over an image: Office apps, browsers and chat clients put a
+  // rendered bitmap next to the copied text, and a paste of those must stay
+  // a text paste. Only an image-only clipboard (screenshot, "copy image", a
+  // copied image file) reaches the SFTP upload flow, when it is enabled and a
+  // remote session is active. "no-image" means there is nothing to upload, so
+  // we silently continue to the remaining fallbacks.
+  if (autoUploadClipboardImage && sessionId && !isLocalConnection) {
+    try {
+      const result = await handleRemoteClipboardImageUpload({
+        bridge: clipboardImageBridge,
+        getRemoteCwd: getRemoteCwd ?? (async () => undefined),
+        isSensitiveInput,
+        sessionId,
+        terminalBackend,
+        term,
+        scrollToBottomAfterProgrammaticInput,
+      });
+      if (result.ok === true) {
+        onClipboardImageUploadResult?.(result);
+        return;
+      }
+      if (result.reason !== "no-image" && result.reason !== "unsupported") {
+        onClipboardImageUploadResult?.(result);
+        return;
+      }
+    } catch {
+      // The clipboard image was already read successfully above, so any throw
+      // here means the upload itself failed (e.g. SFTP cannot be opened for
+      // the session). Surface the same error as the context-menu action
+      // instead of silently pasting unrelated clipboard content.
+      onClipboardImageUploadResult?.({ ok: false, reason: "upload-failed" });
+      return;
+    }
   }
 
   // Local image-only clipboard: Electron's Edit>Paste turns Ctrl+V into a

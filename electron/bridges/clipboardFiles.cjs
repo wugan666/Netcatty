@@ -170,15 +170,73 @@ function createClipboardImageFileName(date = new Date()) {
   return `netcatty-paste-${formatClipboardImageTimestamp(date)}.png`;
 }
 
+// Image formats agent CLIs (Claude Code, Codex, …) accept as attachments.
+const CLIPBOARD_IMAGE_FILE_MEDIA_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+};
+// Guard against staging a huge file just because it has an image extension.
+const MAX_CLIPBOARD_IMAGE_FILE_BYTES = 50 * 1024 * 1024;
+
+function getClipboardImageFileExtension(fileName) {
+  if (typeof fileName !== "string") return "";
+  const ext = path.extname(fileName).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(CLIPBOARD_IMAGE_FILE_MEDIA_TYPES, ext) ? ext : "";
+}
+
+/**
+ * Find a copied image *file* on the clipboard (Explorer/Finder "Copy" on a
+ * .png, or chat apps that put the saved file rather than a bitmap). Only a
+ * single-file clipboard qualifies so a multi-file copy is never half-uploaded.
+ */
+function findClipboardImageFile({ clipboard, fsImpl = fs, pathImpl = path } = {}) {
+  const files = readClipboardFiles({ clipboard, fsImpl, pathImpl });
+  if (files.length !== 1) return null;
+  const [file] = files;
+  if (file.isDirectory) return null;
+  const ext = getClipboardImageFileExtension(file.name);
+  if (!ext) return null;
+  if (!(file.size > 0) || file.size > MAX_CLIPBOARD_IMAGE_FILE_BYTES) return null;
+  return { ...file, ext, mediaType: CLIPBOARD_IMAGE_FILE_MEDIA_TYPES[ext] };
+}
+
 async function readClipboardImage({
   clipboard,
   fsImpl = fs,
+  pathImpl = path,
   tempDirBridge,
   now = () => new Date(),
 } = {}) {
-  if (!clipboard || typeof clipboard.readImage !== "function" || !tempDirBridge?.getTempFilePath) {
+  if (!clipboard || !tempDirBridge?.getTempFilePath) {
     return null;
   }
+
+  try {
+    // A copied image file wins over the bitmap: Windows Explorer can attach a
+    // thumbnail/icon bitmap next to CF_HDROP, and the file is the real image.
+    // It is staged as a temp copy because callers delete the returned path
+    // after uploading, which must never touch the user's original file.
+    const imageFile = findClipboardImageFile({ clipboard, fsImpl, pathImpl });
+    if (imageFile) {
+      const name = createClipboardImageFileName(now()).replace(/\.png$/, imageFile.ext);
+      const imagePath = tempDirBridge.getTempFilePath(name);
+      await fsImpl.promises.copyFile(imageFile.path, imagePath);
+      return {
+        path: imagePath,
+        name,
+        mediaType: imageFile.mediaType,
+        size: imageFile.size,
+      };
+    }
+  } catch {
+    // Fall through to the bitmap formats.
+  }
+
+  if (typeof clipboard.readImage !== "function") return null;
 
   try {
     const image = clipboard.readImage();
@@ -240,6 +298,7 @@ module.exports = {
   createClipboardImageFileName,
   decodeWindowsHDrop,
   decodeWindowsFileNameW,
+  findClipboardImageFile,
   hasClipboardImage,
   parseClipboardTextFilePaths,
   readClipboardFiles,

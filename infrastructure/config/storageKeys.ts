@@ -27,6 +27,8 @@ export const STORAGE_KEY_TERM_SETTINGS = 'netcatty_term_settings_v1';
 export const STORAGE_KEY_TERM_AUTO_CLOSE_EXIT_MIGRATED = 'netcatty_term_auto_close_exit_migrated_v1';
 /** One-time marker: pre-#3770 builds materialized shiftEnterNewlineText "\\n" into saved settings. */
 export const STORAGE_KEY_TERM_SHIFT_ENTER_NEWLINE_MIGRATED = 'netcatty_term_shift_enter_newline_migrated_v1';
+/** One-time marker: builds before the default flip materialized autoUploadClipboardImageOnPaste: false into saved settings. */
+export const STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED = 'netcatty_term_auto_upload_clipboard_image_migrated_v1';
 export const STORAGE_KEY_HOTKEY_SCHEME = 'netcatty_hotkey_scheme_v1';
 export const STORAGE_KEY_CUSTOM_KEY_BINDINGS = 'netcatty_custom_key_bindings_v1';
 export const STORAGE_KEY_HOTKEY_RECORDING = 'netcatty_hotkey_recording_v1';
