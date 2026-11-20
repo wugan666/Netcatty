@@ -34,3 +34,11 @@ export function isMacPlatform(): boolean {
   }
   return false;
 }
+
+/** Detect if the current platform is Windows. */
+export function isWindowsPlatform(): boolean {
+  if (typeof navigator !== 'undefined') {
+    return /Win/i.test(navigator.platform || '') || /Windows/i.test(navigator.userAgent || '');
+  }
+  return false;
+}

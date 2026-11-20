@@ -787,7 +787,10 @@ Resalta el panel dividido enfocado:
     'Envuelve el texto pegado con secuencias de escape para que el shell pueda distinguir el pegado de la entrada escrita. Desactívalo si ves artefactos ^[[200~.',
   'settings.terminal.behavior.autoUploadClipboardImage': 'Subir automáticamente imágenes del portapapeles al pegar',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
-    'Cuando el portapapeles contiene una imagen, pegarla en una sesión remota la sube por SFTP a .netcatty-paste-images/ dentro del directorio de trabajo remoto e inserta la ruta remota en lugar de pegar texto.',
+    'Cuando el portapapeles contiene solo una imagen (una captura, una imagen copiada o un archivo de imagen copiado), pegarla en una sesión remota la sube por SFTP a .netcatty-paste-images/ dentro del directorio de trabajo remoto y pega la ruta remota, para que las CLI de agentes como Claude Code y Codex la adjunten como imagen. El texto del portapapeles siempre se pega como texto.',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Ctrl+C / Ctrl+V al estilo de Windows',
+  'settings.terminal.behavior.windowsStyleCopyPaste.desc':
+    'Como en Windows Terminal: Ctrl+V pega (incluidas las imágenes del portapapeles en sesiones remotas) y Ctrl+C copia cuando hay texto seleccionado; sin selección, Ctrl+C sigue interrumpiendo. Desactívalo para enviar Ctrl+V tal cual al programa remoto. Activado de forma predeterminada en Windows.',
   'settings.terminal.behavior.confirmMultilinePaste': 'Preguntar antes de pegar varias líneas',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     'Muestra un diálogo de confirmación antes de pegar varias líneas, con el número de líneas y caracteres, una vista previa editable y las acciones Enviar / Enviar línea por línea / Cancelar. Protege las CLI de dispositivos de red (Cisco IOS, Huawei VRP, H3C Comware) que no admiten bracketed paste.',

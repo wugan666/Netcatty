@@ -11,6 +11,7 @@ import {
   STORAGE_KEY_TERM_FONT_FAMILY,
   STORAGE_KEY_TERM_SETTINGS,
   STORAGE_KEY_TERM_SHIFT_ENTER_NEWLINE_MIGRATED,
+  STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED,
 } from '../../infrastructure/config/storageKeys';
 import {
   isDeprecatedPrimaryFontId,
@@ -117,6 +118,28 @@ export function migrateMaterializedShiftEnterNewlineDefault(): void {
     });
   }
   localStorageAdapter.writeBoolean(STORAGE_KEY_TERM_SHIFT_ENTER_NEWLINE_MIGRATED, true);
+}
+
+/**
+ * One-time migration for the autoUploadClipboardImageOnPaste default flip
+ * (clipboard images now paste into remote sessions out of the box). Earlier
+ * builds shipped it as opt-in and materialized `false` into saved settings on
+ * any settings write, so upgraders carry an "off" they never chose and image
+ * paste would stay broken for them. Reset that materialized `false` exactly
+ * once, then persist the marker so a later explicit "off" is respected. The
+ * cost: a user who enabled and then disabled it again must disable it once
+ * more. Sync and import do not read this marker.
+ */
+export function migrateMaterializedAutoUploadClipboardImageDefault(): void {
+  if (localStorageAdapter.readBoolean(STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED)) return;
+  const stored = localStorageAdapter.read<Partial<TerminalSettings>>(STORAGE_KEY_TERM_SETTINGS);
+  if (stored?.autoUploadClipboardImageOnPaste === false) {
+    localStorageAdapter.write(STORAGE_KEY_TERM_SETTINGS, {
+      ...stored,
+      autoUploadClipboardImageOnPaste: true,
+    });
+  }
+  localStorageAdapter.writeBoolean(STORAGE_KEY_TERM_AUTO_UPLOAD_CLIPBOARD_IMAGE_MIGRATED, true);
 }
 
 // Auto-detect default hotkey scheme based on platform

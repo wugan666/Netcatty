@@ -188,6 +188,12 @@ export interface TerminalSettings {
   // instead of falling back to a text paste. Remote SSH sessions only.
   autoUploadClipboardImageOnPaste: boolean;
 
+  // Windows Terminal / conhost clipboard keys: plain Ctrl+V pastes and plain
+  // Ctrl+C copies while text is selected (otherwise it still interrupts).
+  // Left undefined it follows the platform — on for Windows, off elsewhere —
+  // see resolveWindowsStyleCopyPaste.
+  windowsStyleCopyPaste?: boolean;
+
   // When true, pasting multiple lines first shows a confirmation dialog with
   // a line/character summary, an editable preview, and send / send-line-by-line
   // / cancel actions. Protects network-device CLIs (Cisco IOS, Huawei VRP,
@@ -608,7 +614,7 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   systemManagerDockerListRefreshInterval: 5,
   systemManagerDockerStatsRefreshInterval: 3,
   disableBracketedPaste: false, // Bracketed paste enabled by default
-  autoUploadClipboardImageOnPaste: false, // Opt-in: image in clipboard auto-uploads on paste (remote sessions)
+  autoUploadClipboardImageOnPaste: true, // Image-only clipboard auto-uploads on paste (remote sessions)
   confirmBeforeMultilinePaste: false, // Opt-in: ask before pasting multiple lines (#3398)
   multilinePasteConfirmMinLines: 2, // Paste of 2+ lines asks for confirmation
   clearWipesScrollback: true, // POSIX-standard: shell `clear` clears scrollback too
@@ -765,4 +771,16 @@ export interface TerminalSession {
    * relaunch. Local clones use `localStartDir` instead of this field.
    */
   pendingInitialCwd?: string;
+}
+
+/**
+ * Effective value of `windowsStyleCopyPaste`: an explicit choice wins,
+ * otherwise Windows gets the Windows Terminal key feel and other platforms
+ * keep Ctrl+V / Ctrl+C as raw control characters.
+ */
+export function resolveWindowsStyleCopyPaste(
+  value: boolean | undefined,
+  isWindows: boolean,
+): boolean {
+  return typeof value === 'boolean' ? value : isWindows;
 }

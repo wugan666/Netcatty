@@ -3490,8 +3490,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   clearWipesScrollbackRef.current = terminalSettings?.clearWipesScrollback ?? true;
   const normalizeTextOnCopyRef = useRef(terminalSettings?.normalizeTextOnCopy ?? true);
   normalizeTextOnCopyRef.current = terminalSettings?.normalizeTextOnCopy ?? true;
-  const autoUploadClipboardImageOnPasteRef = useRef(terminalSettings?.autoUploadClipboardImageOnPaste ?? false);
-  autoUploadClipboardImageOnPasteRef.current = terminalSettings?.autoUploadClipboardImageOnPaste ?? false;
+  const autoUploadClipboardImageOnPasteRef = useRef(terminalSettings?.autoUploadClipboardImageOnPaste ?? true);
+  autoUploadClipboardImageOnPasteRef.current = terminalSettings?.autoUploadClipboardImageOnPaste ?? true;
   const multilinePasteConfirmRef = useRef({
     enabled: terminalSettings?.confirmBeforeMultilinePaste ?? false,
     minLines: terminalSettings?.multilinePasteConfirmMinLines ?? MULTILINE_PASTE_CONFIRM_MIN_LINES_DEFAULT,
@@ -4344,7 +4344,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     scrollToBottomAfterProgrammaticInput,
     containerRef,
     autoUploadClipboardImage:
-      supportsRemoteImagePaste && terminalSettings?.autoUploadClipboardImageOnPaste === true,
+      supportsRemoteImagePaste && (terminalSettings?.autoUploadClipboardImageOnPaste ?? true),
     multilinePasteConfirmRef,
     getRemoteCwd: () => resolveSftpInitialPath({ preferFreshBackend: true }),
     onClipboardImageUploadResult: handleClipboardImageUploadResult,
