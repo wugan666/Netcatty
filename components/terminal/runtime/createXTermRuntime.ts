@@ -187,6 +187,7 @@ import {
   type TerminalOutputHistoryPreview,
 } from "./terminalOutputHistory";
 import { shouldPassThroughCopyShortcut, windowsStyleClipboardKeyAction } from "./terminalCopyShortcut";
+import { isCtrlShiftFChord, shouldPassControlChordToTerminal } from "../../../domain/terminalControlChord";
 import {
   isMacCommandPeriodInterruptChord,
   shouldUseUrgentTerminalInterrupt,
@@ -2595,7 +2596,17 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     }
 
     const currentBindings = ctx.keyBindingsRef.current;
-    if (currentScheme !== "disabled" && currentBindings.length > 0) {
+    const windowsStyleKeys = resolveWindowsStyleCopyPaste(
+      ctx.terminalSettingsRef.current?.windowsStyleCopyPaste,
+      isWindowsPlatform(),
+    );
+    // Windows Terminal key feel: plain Ctrl chords (Ctrl+W, Ctrl+J, Ctrl+K,
+    // Ctrl+B, Ctrl+T, Ctrl+F…) go to the remote program instead of matching
+    // app shortcuts. Snippet shortcuts above are user-assigned and still win.
+    const passControlChordToTerminal = shouldPassControlChordToTerminal(e, {
+      enabled: windowsStyleKeys,
+    });
+    if (!passControlChordToTerminal && currentScheme !== "disabled" && currentBindings.length > 0) {
       const matched = checkAppShortcut(e, currentBindings, isMac);
       if (matched) {
         const { action } = matched;
@@ -2719,12 +2730,22 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     // Kitty/Win32 or xterm can encode the chord; configured app and snippet
     // shortcuts above keep precedence.
     const windowsClipboardAction = windowsStyleClipboardKeyAction(e, {
-      enabled: resolveWindowsStyleCopyPaste(
-        ctx.terminalSettingsRef.current?.windowsStyleCopyPaste,
-        isWindowsPlatform(),
-      ),
+      enabled: windowsStyleKeys,
       hasSelection: hasCopyableSelection,
     });
+    // Ctrl+F now reaches the remote program, so offer Windows Terminal's
+    // Ctrl+Shift+F for find unless that chord is bound to something else
+    // (a bound chord was already handled or deferred above).
+    if (
+      windowsStyleKeys
+      && isCtrlShiftFChord(e)
+      && (currentScheme === "disabled" || checkAppShortcut(e, currentBindings, isMac) === null)
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      ctx.requestSearchFocus();
+      return false;
+    }
     if (windowsClipboardAction === "paste") {
       e.preventDefault();
       e.stopPropagation();

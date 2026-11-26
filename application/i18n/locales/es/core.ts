@@ -782,9 +782,9 @@ Resalta el panel dividido enfocado:
   'settings.terminal.behavior.autoUploadClipboardImage': 'Subir automáticamente imágenes del portapapeles al pegar',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
     'Cuando el portapapeles contiene solo una imagen (una captura, una imagen copiada o un archivo de imagen copiado), pegarla en una sesión remota la sube por SFTP a .netcatty-paste-images/ dentro del directorio de trabajo remoto y pega la ruta remota, para que las CLI de agentes como Claude Code y Codex la adjunten como imagen. El texto del portapapeles siempre se pega como texto.',
-  'settings.terminal.behavior.windowsStyleCopyPaste': 'Ctrl+C / Ctrl+V al estilo de Windows',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Teclado y ratón al estilo de Windows Terminal',
   'settings.terminal.behavior.windowsStyleCopyPaste.desc':
-    'Como en Windows Terminal: Ctrl+V pega (incluidas las imágenes del portapapeles en sesiones remotas) y Ctrl+C copia cuando hay texto seleccionado; sin selección, Ctrl+C sigue interrumpiendo. Desactívalo para enviar Ctrl+V tal cual al programa remoto. Activado de forma predeterminada en Windows.',
+    'Se comporta como Windows Terminal: Ctrl+V pega (incluidas las imágenes del portapapeles en sesiones remotas); Ctrl+C copia cuando hay texto seleccionado y, si no, interrumpe; con el terminal enfocado, las teclas Ctrl+letra (Ctrl+W, Ctrl+J, Ctrl+K, Ctrl+B, Ctrl+T, Ctrl+F…) se envían al programa remoto en lugar de activar atajos de la aplicación: usa Ctrl+Mayús+F para buscar y reasigna otros atajos a combinaciones con Ctrl+Mayús si los necesitas dentro del terminal; con el clic derecho configurado como Pegar, el clic derecho copia la selección y, si no hay, pega. Activado de forma predeterminada en Windows.',
   'settings.terminal.behavior.confirmMultilinePaste': 'Preguntar antes de pegar varias líneas',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     'Muestra un diálogo de confirmación antes de pegar varias líneas, con el número de líneas y caracteres, una vista previa editable y las acciones Enviar / Enviar línea por línea / Cancelar. Protege las CLI de dispositivos de red (Cisco IOS, Huawei VRP, H3C Comware) que no admiten bracketed paste.',
