@@ -7,6 +7,8 @@ import { isSessionReconnectDisabled } from '../top-tabs/SessionTabContextMenuCon
 
 import { resolveEffectiveTerminalProtocol } from '../../domain/terminalProtocol';
 import { classifyDistroId } from '../../domain/host';
+import { resolveWindowsStyleCopyPaste } from '../../domain/models/terminal';
+import { isWindowsPlatform } from '../../lib/utils';
 import type { HostInfoBarTitleMode } from '../../domain/models';
 import { terminalReconnectRegistry } from '../../application/state/terminalReconnectRegistry';
 import { useNetworkDeviceModeSuggestion } from '../../application/state/useNetworkDeviceModeSuggestion';
@@ -707,6 +709,21 @@ function TerminalViewInner({ ctx, isPaneMagnified = false }: { ctx: TerminalView
       onOpenBrowser={(!host?.protocol || ['ssh', 'mosh', 'local'].includes(host.protocol)) ? () => { void ctx.handleOpenHostBrowser(); } : undefined}
       onOpenSftp={status === "connected" && !isSerialConnection && !host?.id?.startsWith("serial-") && !isPluginHostProtocol(host?.protocol) ? ctx.handleOpenSFTP : undefined}
       onPaste={terminalContextActions.onPaste}
+      onRightClickPaste={
+        resolveWindowsStyleCopyPaste(terminalSettings?.windowsStyleCopyPaste, isWindowsPlatform())
+          ? () => {
+            // Windows Terminal / conhost: right-click copies an active
+            // selection (and dismisses it), otherwise it pastes.
+            const term = termRef.current;
+            if (term?.hasSelection()) {
+              terminalContextActions.onCopy();
+              term.clearSelection();
+              return;
+            }
+            void terminalContextActions.onPaste();
+          }
+          : undefined
+      }
       onUploadClipboardImage={status === "connected" ? terminalContextActions.onUploadClipboardImage : undefined}
       onPasteSelection={terminalContextActions.onPasteSelection}
       onSelectAll={terminalContextActions.onSelectAll}

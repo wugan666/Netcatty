@@ -705,9 +705,9 @@ export const ruCoreMessages: Messages = {
   'settings.terminal.behavior.autoUploadClipboardImage': 'Авто-загрузка изображений буфера обмена при вставке',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
     'Когда в буфере обмена только изображение (снимок экрана, скопированное изображение или скопированный файл изображения), вставка в удалённой сессии загружает его по SFTP в каталог .netcatty-paste-images/ в текущем удалённом каталоге и вставляет удалённый путь, чтобы агентские CLI, такие как Claude Code и Codex, прикрепили его как изображение. Текст из буфера обмена всегда вставляется как текст.',
-  'settings.terminal.behavior.windowsStyleCopyPaste': 'Ctrl+C / Ctrl+V как в Windows',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Клавиатура и мышь как в Windows Terminal',
   'settings.terminal.behavior.windowsStyleCopyPaste.desc':
-    'Как в Windows Terminal: Ctrl+V вставляет (включая изображения из буфера обмена в удалённых сессиях), а Ctrl+C копирует выделенный текст; без выделения Ctrl+C по-прежнему прерывает команду. Отключите, чтобы Ctrl+V передавался удалённой программе как есть. По умолчанию включено в Windows.',
+    'Поведение как в Windows Terminal: Ctrl+V вставляет (включая изображения из буфера обмена в удалённых сессиях); Ctrl+C копирует выделенный текст, а без выделения прерывает команду; когда терминал в фокусе, сочетания Ctrl+буква (Ctrl+W, Ctrl+J, Ctrl+K, Ctrl+B, Ctrl+T, Ctrl+F…) передаются удалённой программе, а не вызывают сочетания приложения — для поиска используйте Ctrl+Shift+F, а другие сочетания при необходимости переназначьте на комбинации с Ctrl+Shift; если правая кнопка настроена на вставку, она копирует выделение, а без выделения вставляет. По умолчанию включено в Windows.',
   'settings.terminal.behavior.confirmMultilinePaste': 'Спрашивать перед вставкой нескольких строк',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     'Перед вставкой нескольких строк показывать диалог подтверждения с количеством строк и символов, редактируемым предпросмотром и действиями «Отправить» / «Отправить построчно» / «Отмена». Защищает CLI сетевых устройств (Cisco IOS, Huawei VRP, H3C Comware), не поддерживающих bracketed paste.',

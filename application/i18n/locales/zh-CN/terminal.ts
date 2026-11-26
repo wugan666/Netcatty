@@ -354,9 +354,9 @@ export const zhCNTerminalMessages: Messages = {
   'settings.terminal.behavior.autoUploadClipboardImage': '粘贴时自动上传剪贴板图片',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
     '当剪贴板中只有图片（截图、复制的图片或复制的图片文件）时，在远程会话中粘贴会通过 SFTP 将图片上传到远端当前目录的 .netcatty-paste-images/ 文件夹，并以粘贴方式输入远端路径，Claude Code、Codex 等命令行智能体会将其识别为图片附件。剪贴板中有文本时始终按文本粘贴。',
-  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows 风格的 Ctrl+C / Ctrl+V',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows 终端按键与鼠标手感',
   'settings.terminal.behavior.windowsStyleCopyPaste.desc':
-    '与 Windows 终端一致：Ctrl+V 直接粘贴（远程会话中也包括剪贴板图片），选中文本时 Ctrl+C 为复制；未选中时 Ctrl+C 仍然是中断。关闭后 Ctrl+V 会原样发送给远端程序。在 Windows 上默认开启。',
+    '与 Windows 终端保持一致：Ctrl+V 直接粘贴（远程会话中也包括剪贴板图片）；选中文本时 Ctrl+C 为复制，未选中时仍是中断；终端获得焦点时，Ctrl+字母键（Ctrl+W、Ctrl+J、Ctrl+K、Ctrl+B、Ctrl+T、Ctrl+F 等）直接发送给远端程序，不再触发应用快捷键——搜索请用 Ctrl+Shift+F，其他快捷键如需在终端内使用，可在“快捷键”里改绑为 Ctrl+Shift 组合；右键行为设为“粘贴”时，右键在有选区时复制、无选区时粘贴。在 Windows 上默认开启。',
   'settings.terminal.behavior.confirmMultilinePaste': '粘贴多行前先询问',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     '粘贴多行文本时先弹出确认对话框，显示行数和字符数、可编辑的预览，并提供发送 / 逐行发送 / 取消操作。可保护不支持括号粘贴的网络设备 CLI（Cisco IOS、华为 VRP、H3C Comware）。',
