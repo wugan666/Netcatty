@@ -531,6 +531,20 @@ test("lazy activation receives the latest host environment before its first cont
   ]);
 });
 
+test("republishing an identical environment does not announce a contribution change", async (context) => {
+  const pluginManifest = manifest("com.example.environment-dedupe", ["onView:com.example.environment-dedupe.view"]);
+  const { service } = setup(context, pluginManifest);
+  const reasons = [];
+  service.onDidChange((event) => reasons.push(event.reason));
+  const environment = { locale: "en", theme: "dark", reducedMotion: false, highContrast: false, themeTokens: { "--a": "1" } };
+  await service.setEnvironment(environment);
+  await service.setEnvironment({ ...environment, themeTokens: { "--a": "1" } });
+  assert.deepEqual(reasons, ["environment"]);
+  await service.setEnvironment({ ...environment, theme: "light" });
+  assert.deepEqual(reasons, ["environment", "environment"]);
+  assert.equal(service.getEnvironment().theme, "light");
+});
+
 test("view activation identity fails closed after version or runtime replacement", async (context) => {
   const pluginManifest = manifest("com.example.view-identity", ["onView:com.example.view-identity.view"]);
   let runtimeId = "runtime-view-1";
