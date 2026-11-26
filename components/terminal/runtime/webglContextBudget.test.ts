@@ -179,3 +179,14 @@ test("released and forgotten panes free their slot", () => {
   assert.equal(budget.tryAcquire(hidden), true, "acquiring twice keeps one slot");
   assert.equal(budget.getActiveCount(), 1);
 });
+
+test("the budget grows only when the browser reports a raised context cap", async () => {
+  const { MAX_ACTIVE_WEBGL_CONTEXTS, resolveMaxActiveWebglContexts } = await import("./webglContextBudget");
+  assert.equal(resolveMaxActiveWebglContexts(null), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(undefined), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(16), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(Number.NaN), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(64), 56);
+  // A barely raised cap never shrinks the budget below the default.
+  assert.equal(resolveMaxActiveWebglContexts(18), MAX_ACTIVE_WEBGL_CONTEXTS);
+});

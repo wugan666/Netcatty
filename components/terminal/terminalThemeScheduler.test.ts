@@ -80,3 +80,27 @@ test('hidden terminal theme updates do not wait for browser idle time', async ()
   await Promise.resolve();
   assert.equal(fakeTerm.options.theme.background, '#111111');
 });
+
+test('re-applying identical colors does not touch the xterm theme again', async () => {
+  resetTerminalThemeSchedulerForTests();
+  const { applyTerminalThemeSync } = await import('./terminalThemeScheduler');
+  let assignments = 0;
+  let current: Record<string, string> = {};
+  const fakeTerm = {
+    options: {
+      get theme() { return current; },
+      set theme(value: Record<string, string>) { assignments += 1; current = value; },
+    },
+  };
+
+  applyTerminalThemeSync(fakeTerm as never, theme('same'));
+  // A tab switch re-runs the sync with an equal (but not identical) theme object.
+  applyTerminalThemeSync(fakeTerm as never, theme('same'));
+  assert.equal(assignments, 1);
+
+  const recolored = theme('same');
+  recolored.colors.red = '#ff0000';
+  applyTerminalThemeSync(fakeTerm as never, recolored);
+  assert.equal(assignments, 2);
+  assert.equal(current.red, '#ff0000');
+});
