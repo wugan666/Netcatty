@@ -104,6 +104,7 @@ import { collectSnippetDeleteIds } from '../../domain/snippetSelection.ts';
 import { shouldOpenLocalTerminalOnStartup, resolveStartupLandingSetting } from '../../domain/startupLanding';
 import { createOpenTerminalQueue } from './openTerminalQueue';
 import { useAppStartupEffects } from './useAppStartupEffects';
+import { OPEN_SESSION_COMMAND_TAB_EVENT, type OpenSessionCommandTabDetail } from '../state/sessionCommandTab';
 import { handleTrayJumpToSessionImpl, handleTrayTogglePortForwardImpl, handleTrayPanelConnectImpl, handleTrayPanelConnectRequestImpl, flushQueuedTrayPanelConnectHostsImpl, handleGlobalHotkeyKeyDownImpl, handleEscapeKeyDownImpl, handleKeyboardInteractiveSubmitImpl, handleKeyboardInteractiveCancelImpl, handlePassphraseSubmitImpl, handlePassphraseCancelImpl, handlePassphraseSkipImpl, handleFidoPromptSubmitImpl, handleFidoPromptCancelImpl, createLocalTerminalWithCurrentShellImpl, splitSessionWithCurrentShellImpl, copySessionWithCurrentShellImpl, duplicateSessionWithCurrentShellImpl, copyWorkspaceWithCurrentShellImpl, copySessionToNewWindowWithCurrentShellImpl, moveSessionToNewWindowImpl, confirmIfBusyLocalTerminalImpl, closeTabsBatchImpl, executeHotkeyActionImpl, handleCreateLocalTerminalImpl, handleConnectToHostImpl, handleConnectRemoteDesktopImpl, handleOpenSystemRemoteDesktopImpl, handleTerminalDataCaptureImpl, startRestoredSessionConnectionLogImpl, hasMultipleProtocolsImpl, handleHostConnectWithProtocolCheckImpl, handleProtocolSelectImpl, handleRootContextMenuImpl, markForwardedNativeShortcutEvent } from './AppHandlers';
 import type { RemoteDesktopProtocol } from '../../domain/remoteDesktop';
 
@@ -1924,6 +1925,23 @@ export function AppSideEffects() {
       return next.length === prev.length ? prev : next;
     });
   }, [sessions]);
+
+  // Side panels (tmux manager) open their terminals as regular tabs here so
+  // they share every main-terminal behavior instead of living in a popup.
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<OpenSessionCommandTabDetail>).detail;
+      if (!detail?.sourceSessionId || !detail.startupCommand || detail.handled) return;
+      if (!sessions.some((session) => session.id === detail.sourceSessionId)) return;
+      copySession(detail.sourceSessionId, {
+        startupCommand: detail.startupCommand,
+        customName: detail.title,
+      });
+      detail.handled = true;
+    };
+    window.addEventListener(OPEN_SESSION_COMMAND_TAB_EVENT, open);
+    return () => window.removeEventListener(OPEN_SESSION_COMMAND_TAB_EVENT, open);
+  }, [copySession, sessions]);
 
   useEffect(() => {
     if (isPeerSessionWindow) return;

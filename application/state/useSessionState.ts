@@ -1508,6 +1508,10 @@ export const useSessionState = ({
     inheritedCwd?: string;
     /** When false, open a brand-new connection instead of reusing the source's SSH channel. */
     reuseConnection?: boolean;
+    /** Command the new tab runs once connected (e.g. attaching a tmux session). */
+    startupCommand?: string;
+    /** Tab name for the new session. */
+    customName?: string;
   }) => {
     // Pre-allocate the new id outside the updater so StrictMode's
     // double-invocation of the functional updater doesn't mint two ids.
@@ -1531,6 +1535,8 @@ export const useSessionState = ({
         localShellType: options?.localShellType,
         inheritedCwd: options?.inheritedCwd,
         reuseConnection: options?.reuseConnection,
+        startupCommand: options?.startupCommand,
+        customName: options?.customName,
       });
 
       // Schedule the activeTab + tabOrder updates only when creation

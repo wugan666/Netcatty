@@ -24,6 +24,8 @@ import {
 import { SystemPanelPromptDialog } from './SystemPanelPromptDialog';
 import { SystemPanelConfirmDialog } from './SystemPanelConfirmDialog';
 import { openInteractiveTerminal } from './openInteractiveTerminal';
+import { canReuseTerminalConnection } from '../../application/state/terminalConnectionReuse';
+import { requestSessionCommandTab } from '../../application/state/sessionCommandTab';
 import { showSystemManagerError } from './systemManagerToast';
 import { runTmuxSessionAction } from './tmuxActionFocus';
 
@@ -154,10 +156,24 @@ export const TmuxSessionCard = memo(function TmuxSessionCard({
     && pending.windowIndex === windowIndex;
 
   const handleAttach = async (windowIndex?: number) => {
+    const title = windowIndex !== undefined ? `tmux: ${session.name}:${windowIndex}` : `tmux: ${session.name}`;
+    // Prefer a regular tab in the main window so tmux feels like every other
+    // terminal (same keys, paste, context menu). The detached popup remains
+    // the fallback for windows that host no tab strip.
+    if (
+      canReuseTerminalConnection(parentSession)
+      && requestSessionCommandTab({
+        sourceSessionId: parentSession.id,
+        startupCommand: buildTmuxAttachCommand(session.name, windowIndex, { tab: true }),
+        title,
+      })
+    ) {
+      return;
+    }
     const result = await openInteractiveTerminal(
       backend,
       parentSession,
-      windowIndex !== undefined ? `tmux: ${session.name}:${windowIndex}` : `tmux: ${session.name}`,
+      title,
       buildTmuxAttachCommand(session.name, windowIndex),
       { icon: TMUX_POPUP_ICON },
     );
