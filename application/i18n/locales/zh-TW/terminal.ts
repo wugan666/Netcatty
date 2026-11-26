@@ -359,9 +359,9 @@ export const zhTWTerminalMessages: Messages = {
   'settings.terminal.behavior.autoUploadClipboardImage': '貼上時自動上傳剪貼簿圖片',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
     '當剪貼簿中只有圖片（截圖、複製的圖片或複製的圖片檔案）時，在遠端工作階段中貼上會透過 SFTP 將圖片上傳到遠端目前目錄的 .netcatty-paste-images/ 資料夾，並以貼上方式輸入遠端路徑，Claude Code、Codex 等命令列智慧代理會將其辨識為圖片附件。剪貼簿中有文字時一律以文字貼上。',
-  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows 風格的 Ctrl+C / Ctrl+V',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows 終端機按鍵與滑鼠手感',
   'settings.terminal.behavior.windowsStyleCopyPaste.desc':
-    '與 Windows 終端機一致：Ctrl+V 直接貼上（遠端工作階段中也包含剪貼簿圖片），選取文字時 Ctrl+C 為複製；未選取時 Ctrl+C 仍然是中斷。關閉後 Ctrl+V 會原樣傳送給遠端程式。在 Windows 上預設開啟。',
+    '與 Windows 終端機保持一致：Ctrl+V 直接貼上（遠端工作階段中也包含剪貼簿圖片）；選取文字時 Ctrl+C 為複製，未選取時仍是中斷；終端機取得焦點時，Ctrl+字母鍵（Ctrl+W、Ctrl+J、Ctrl+K、Ctrl+B、Ctrl+T、Ctrl+F 等）直接傳送給遠端程式，不再觸發應用程式快速鍵——搜尋請用 Ctrl+Shift+F，其他快速鍵如需在終端機內使用，可在「快速鍵」中改綁為 Ctrl+Shift 組合；右鍵行為設為「貼上」時，右鍵在有選取範圍時複製、沒有時貼上。在 Windows 上預設開啟。',
   'settings.terminal.behavior.confirmMultilinePaste': '貼上多行前先詢問',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     '貼上多行文字時先彈出確認對話框，顯示行數和字元數、可編輯的預覽，並提供傳送 / 逐行傳送 / 取消操作。可保護不支援括號貼上的網路設備 CLI（Cisco IOS、華為 VRP、H3C Comware）。',

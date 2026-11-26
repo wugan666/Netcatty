@@ -55,6 +55,8 @@ export interface TerminalContextMenuProps {
   showContextMenuOverFullscreenApps?: boolean;
   onSaveScreen?: () => void;
   onCopy?: () => void;
+  /** Right-click action in 'paste' mode; defaults to onPaste. */
+  onRightClickPaste?: () => void;
   onPaste?: () => void;
   onUploadClipboardImage?: () => void;
   onPasteSelection?: () => void;
@@ -233,6 +235,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   showContextMenuOverFullscreenApps = false,
   onSaveScreen,
   onCopy,
+  onRightClickPaste,
   onPaste,
   onUploadClipboardImage,
   onPasteSelection,
@@ -380,12 +383,12 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
       // Paste / select-word: intercept and prevent the context menu
       e.preventDefault();
       if (rightClickBehavior === 'paste') {
-        onPaste?.();
+        (onRightClickPaste ?? onPaste)?.();
       } else if (rightClickBehavior === 'select-word') {
         onSelectWord?.();
       }
     },
-    [rightClickBehavior, onPaste, onSelectWord, isAlternateScreen, getMouseTrackingMode, showReconnectAction, showContextMenuOverFullscreenApps],
+    [rightClickBehavior, onPaste, onRightClickPaste, onSelectWord, isAlternateScreen, getMouseTrackingMode, showReconnectAction, showContextMenuOverFullscreenApps],
   );
 
   // Always use ContextMenu wrapper to maintain consistent React tree structure
