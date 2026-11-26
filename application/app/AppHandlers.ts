@@ -9,6 +9,10 @@ import { getAvailablePaneMagnificationController } from '../../domain/paneMagnif
 import { sanitizeHostIconFields } from '../../domain/hostIcon';
 import { resolveEffectiveTerminalProtocol } from '../../domain/terminalProtocol';
 import { isPluginHostProtocol } from '../../domain/pluginConnection';
+import { shouldPassControlChordToTerminal } from '../../domain/terminalControlChord';
+import { resolveWindowsStyleCopyPaste } from '../../domain/models/terminal';
+import { getTerminalSettingsSnapshot } from '../state/terminalSettingsStore';
+import { isWindowsPlatform } from '../../lib/utils';
 import { getTerminalPassthroughActions } from '../state/useGlobalHotkeys';
 import { getSettingsChromeSnapshot } from '../state/settingsChromeStore';
 import { isHostTreeWorkTabSurface } from './workTabSurface';
@@ -318,6 +322,21 @@ export function handleGlobalHotkeyKeyDownImpl(getCtx: AppContextGetter, e: Keybo
             node.hasAttribute("data-session-id")),
       ),
     );
+
+    // Windows Terminal key feel: with the terminal focused, plain Ctrl chords
+    // belong to the remote program (Ctrl+W, Ctrl+J, Ctrl+K, Ctrl+B…), so app
+    // shortcuts must not consume them here before xterm sees the key.
+    if (
+      isTerminalElement
+      && shouldPassControlChordToTerminal(e, {
+        enabled: resolveWindowsStyleCopyPaste(
+          getTerminalSettingsSnapshot().terminalSettings.windowsStyleCopyPaste,
+          isWindowsPlatform(),
+        ),
+      })
+    ) {
+      return;
+    }
 
     for (const binding of keyBindings) {
       const keyStr = isMac ? binding.mac : binding.pc;

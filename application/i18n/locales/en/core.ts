@@ -781,9 +781,9 @@ Highlight the focused split pane:
   'settings.terminal.behavior.autoUploadClipboardImage': 'Auto-upload clipboard images on paste',
   'settings.terminal.behavior.autoUploadClipboardImage.desc':
     'When the clipboard holds only an image (a screenshot, a copied image, or a copied image file), pasting in a remote session uploads it via SFTP to .netcatty-paste-images/ under the remote working directory and pastes the remote path, so agent CLIs such as Claude Code and Codex attach it as an image. Clipboard text is always pasted as text.',
-  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows-style Ctrl+C / Ctrl+V',
+  'settings.terminal.behavior.windowsStyleCopyPaste': 'Windows Terminal key and mouse feel',
   'settings.terminal.behavior.windowsStyleCopyPaste.desc':
-    'Like Windows Terminal: Ctrl+V pastes (including clipboard images in remote sessions) and Ctrl+C copies while text is selected; without a selection Ctrl+C still interrupts. Turn off to send Ctrl+V to the remote program as-is. On by default on Windows.',
+    'Behave like Windows Terminal: Ctrl+V pastes (including clipboard images in remote sessions); Ctrl+C copies while text is selected and otherwise interrupts; with the terminal focused, plain Ctrl+letter keys (Ctrl+W, Ctrl+J, Ctrl+K, Ctrl+B, Ctrl+T, Ctrl+F…) go to the remote program instead of triggering app shortcuts — use Ctrl+Shift+F to search, and rebind other shortcuts to Ctrl+Shift combinations if you need them inside the terminal; with right-click set to Paste, right-click copies a selection and otherwise pastes. On by default on Windows.',
   'settings.terminal.behavior.confirmMultilinePaste': 'Ask before pasting multiple lines',
   'settings.terminal.behavior.confirmMultilinePaste.desc':
     'Show a confirmation dialog before pasting multiple lines, with the line/character count, an editable preview, and Send / Send line by line / Cancel actions. Protects switch and firewall CLIs (Cisco IOS, Huawei VRP, H3C Comware) that do not support bracketed paste.',
