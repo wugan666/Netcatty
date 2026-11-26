@@ -5,7 +5,7 @@ import {
 } from '../../domain/terminalPromptSecurity';
 
 type PromptHostnameSessionSignalOptions = {
-  getSession: (sessionId: string) => Pick<TerminalSession, 'protocol' | 'hostname'> | undefined;
+  getSession: (sessionId: string) => Pick<TerminalSession, 'protocol'> | undefined;
   onChange: (sessionId: string, hostname: string | null) => void;
   maxTailChars?: number;
   /**
@@ -32,7 +32,6 @@ export function createPromptHostnameSessionSignalController({
   analysisDelayMs,
 }: PromptHostnameSessionSignalOptions) {
   const tails = new Map<string, string>();
-  const baselines = new Map<string, string>();
   const published = new Map<string, string>();
   const tailLimit = Math.max(256, maxTailChars);
 
@@ -45,14 +44,13 @@ export function createPromptHostnameSessionSignalController({
       pendingAnalysis.delete(sessionId);
     }
     tails.delete(sessionId);
-    baselines.delete(sessionId);
     published.delete(sessionId);
   };
 
   return {
     forgetSession,
     pruneSessions(validSessionIds: ReadonlySet<string>): void {
-      for (const sessionId of [...tails.keys(), ...baselines.keys(), ...published.keys()]) {
+      for (const sessionId of [...tails.keys(), ...published.keys()]) {
         if (!validSessionIds.has(sessionId)) {
           forgetSession(sessionId);
         }
@@ -102,19 +100,8 @@ export function createPromptHostnameSessionSignalController({
       const detectedKey = normalizedHostname(detected);
       if (!detectedKey) return;
 
-      let baseline = baselines.get(sessionId);
-      if (baseline === undefined) {
-        baseline = normalizedHostname(session.hostname) || detectedKey;
-        baselines.set(sessionId, baseline);
-      }
-
-      if (detectedKey === baseline) {
-        if (!published.has(sessionId)) return;
-        published.delete(sessionId);
-        onChange(sessionId, null);
-        return;
-      }
-
+      // Observe the prompt, not whether its hostname matches an IP or DNS alias.
+      // The domain title policy decides if this presentation is shown.
       if (published.get(sessionId) === detectedKey) return;
       published.set(sessionId, detectedKey);
       onChange(sessionId, detected);
