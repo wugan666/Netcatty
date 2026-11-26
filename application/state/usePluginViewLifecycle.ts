@@ -199,6 +199,11 @@ export function usePluginViewLifecycle({
     const forcedColorsQuery = window.matchMedia('(forced-colors: active)');
     const contrastQuery = window.matchMedia('(prefers-contrast: more)');
     let frame = 0;
+    // The observer below fires on every documentElement class/style mutation,
+    // which each tab switch produces. Publishing an unchanged environment made
+    // the main process announce "contributions changed", re-rendering every
+    // open terminal twice per click — skip no-op publishes here.
+    let lastPublished: { setEnvironment: unknown; serialized: string } | null = null;
     const cancelPendingPublish = () => {
       if (frame) {
         cancelAnimationFrame(frame);
@@ -211,13 +216,23 @@ export function usePluginViewLifecycle({
       const styles = current.suppliedThemeTokens ? null : getComputedStyle(document.documentElement);
       const themeTokens = current.suppliedThemeTokens ?? Object.fromEntries(PLUGIN_THEME_TOKEN_NAMES
         .map((name) => [name, styles?.getPropertyValue(name).trim() ?? '']));
-      void current.setEnvironment({
+      const environment = {
         locale: current.locale,
         theme: current.theme,
         reducedMotion: reducedMotionQuery.matches,
         highContrast: forcedColorsQuery.matches || contrastQuery.matches,
         themeTokens,
-      }).catch(() => {});
+      };
+      const serialized = JSON.stringify(environment);
+      if (lastPublished?.setEnvironment === current.setEnvironment && lastPublished.serialized === serialized) {
+        return;
+      }
+      const attempt = { setEnvironment: current.setEnvironment, serialized };
+      lastPublished = attempt;
+      void current.setEnvironment(environment).catch(() => {
+        // Let the next mutation retry a publish that never reached the host.
+        if (lastPublished === attempt) lastPublished = null;
+      });
     };
     const schedulePublish = () => {
       cancelPendingPublish();

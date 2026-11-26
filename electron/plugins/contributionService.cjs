@@ -147,6 +147,7 @@ class PluginContributionService {
     this.viewMessageListeners = new Set();
     this.environment = null;
     this.environmentRevision = 0;
+    this.environmentSerialized = null;
     this.runtimeEnvironmentState = new Map();
     this.initialized = false;
   }
@@ -590,6 +591,14 @@ class PluginContributionService {
 
   async setEnvironment(environment) {
     assertJsonValue(environment, "environment");
+    // The renderer republishes on every document style/class mutation (each
+    // tab switch touches them). An identical environment must not fan out a
+    // contributions-changed event: every open terminal re-renders and
+    // re-queries its providers in response. Runtimes that missed a notify are
+    // still seeded lazily through runtimeEnvironmentState.
+    const serialized = JSON.stringify(environment);
+    if (serialized === this.environmentSerialized) return;
+    this.environmentSerialized = serialized;
     this.environment = freezeJson(environment);
     this.environmentRevision += 1;
     for (const plugin of this.database.listPlugins()) {
