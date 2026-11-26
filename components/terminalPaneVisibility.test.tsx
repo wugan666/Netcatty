@@ -286,3 +286,18 @@ test("terminal layer stays rendered behind other app surfaces unless hibernate i
     zIndex: 10,
   });
 });
+
+test("inactive terminal panes skip layout and paint while keeping their box", () => {
+  const inactiveStyle = resolveInactiveTerminalPaneStyle(
+    { left: 12, top: 0, width: "640px", height: "480px" },
+    null,
+    false,
+  );
+
+  // Hidden panes must not take part in document layout on every tab switch;
+  // content-visibility keeps the box, canvas contents and on-demand measuring.
+  assert.equal(inactiveStyle.contentVisibility, "hidden");
+  assert.equal(inactiveStyle.width, "640px");
+  assert.equal(inactiveStyle.height, "480px");
+  assert.equal(inactiveStyle.visibility, "visible");
+});
