@@ -445,11 +445,16 @@ export function resolveTerminalTopOffsets({
   networkDeviceTipHeight?: number;
 }): { toolbarOffset: number; contentTop: string } {
   const toolbarOffset = isSearchOpen ? 64 : showHostInfoBar ? 30 : 0;
+  // The search bar floats over the first terminal rows instead of pushing the
+  // terminal down. Moving the content would change the row count on every
+  // open/close: a full xterm reflow + repaint locally and a SIGWINCH remotely
+  // (full-screen TUIs redraw everything), which made toggling search stutter.
+  const contentToolbarOffset = showHostInfoBar ? 30 : 0;
   return {
     toolbarOffset,
     // The tip strip stacks directly below the toolbar, so the terminal
     // content must start below both.
-    contentTop: `${toolbarOffset + networkDeviceTipHeight + terminalBodyInset}px`,
+    contentTop: `${contentToolbarOffset + networkDeviceTipHeight + terminalBodyInset}px`,
   };
 }
 

@@ -179,6 +179,16 @@ function createPreloadApi(ctx) {
   openPluginLogFolder: () => ipcRenderer.invoke("netcatty:plugins:log-open"),
   exportPluginLogs: () => ipcRenderer.invoke("netcatty:plugins:log-export"),
   clearPluginLogs: () => ipcRenderer.invoke("netcatty:plugins:log-clear"),
+  // The main process raises Chromium's WebGL context cap with a command-line
+  // switch that Chromium forwards to renderers. Reading it back here (rather
+  // than assuming it) keeps the terminal context budget honest if the switch
+  // is ever dropped: no switch means the stock 16-context cap still applies.
+  getWebglContextLimit: () => {
+    const prefix = "--max-active-webgl-contexts=";
+    const arg = (process.argv || []).find((value) => typeof value === "string" && value.startsWith(prefix));
+    const limit = arg ? Number.parseInt(arg.slice(prefix.length), 10) : Number.NaN;
+    return Number.isInteger(limit) && limit > 0 ? limit : null;
+  },
   setPluginTerminalTarget: (target) => ipcRenderer.invoke("netcatty:plugins:terminal-target", target),
   getPluginThemes: () => ipcRenderer.invoke("netcatty:plugins:theme-catalog"),
   applyPluginTheme: (request) => ipcRenderer.invoke("netcatty:plugins:theme-apply", request),

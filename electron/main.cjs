@@ -268,6 +268,12 @@ if (process.env.NETCATTY_COMPAT_GPU !== "1") {
   app.commandLine.appendSwitch("ignore-gpu-blacklist"); // Some Chromium builds use this alias; keep both for safety
   app.commandLine.appendSwitch("enable-gpu-rasterization");
   app.commandLine.appendSwitch("enable-zero-copy");
+  // Chromium keeps only 16 WebGL contexts alive per renderer. With more
+  // terminal tabs than that, hidden tabs lose their GPU renderer and every
+  // switch to one rebuilds a context and its glyph atlas. Trade memory for
+  // instant switching; the renderer reads this back through the preload
+  // (getWebglContextLimit) and sizes its context budget from it.
+  app.commandLine.appendSwitch("max-active-webgl-contexts", "64");
 }
 
 // Linux: Chromium only auto-selects gnome-libsecret / kwallet from

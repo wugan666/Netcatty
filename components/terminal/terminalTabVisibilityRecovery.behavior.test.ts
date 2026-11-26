@@ -5,6 +5,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useTerminalEffects } from './useTerminalEffects';
 import { TERMINAL_SESSION_RESTORE_FOCUS_EVENT } from './focusTerminalSession';
+import { QUIET_TAB_REVEAL_MAX_HIDDEN_MS, noteWebglContextChurn } from './runtime/webglContextEpoch';
 
 // Exercise the real hook's reveal and settling effects. The injected effect
 // hooks omit unrelated backend/auth/font setup; no recovery logic is copied.
@@ -128,21 +129,41 @@ function harness(t: any, initiallyHasRuntime = true) {
   };
 }
 
-for (const hiddenMs of [2000, 4000]) {
-  test(`unchanged reveal after ${hiddenMs}ms does not repeat recovery in settling timers`, t => {
+// The atlas rebuild guards against another pane creating or losing a WebGL
+// context while this one sat hidden. A quiet hide of any length (short of the
+// long-hide cap) reveals without it; churn during a hide past the short-hide
+// window still rebuilds exactly once.
+for (const { hiddenMs, churn } of [
+  { hiddenMs: 2000, churn: false },
+  { hiddenMs: 4000, churn: false },
+  { hiddenMs: 2000, churn: true },
+  { hiddenMs: 4000, churn: true },
+]) {
+  test(`unchanged reveal after ${hiddenMs}ms${churn ? ' with WebGL churn' : ''} does not repeat recovery in settling timers`, t => {
     const h = harness(t);
     h.advance(hiddenMs);
+    if (churn) noteWebglContextChurn();
     h.reveal();
-    assert.equal(h.calls.clear, hiddenMs >= 3000 ? 1 : 0);
+    const expectedClears = churn && hiddenMs >= 3000 ? 1 : 0;
+    assert.equal(h.calls.clear, expectedClears);
     // Every reveal asks for the WebGL renderer once: a no-op while it is live,
     // a rebuild when Chromium or the context budget took it while hidden.
     assert.equal(h.calls.ensure, 1);
     h.advance(600);
-    assert.equal(h.calls.clear, hiddenMs >= 3000 ? 1 : 0);
+    assert.equal(h.calls.clear, expectedClears);
     assert.equal(h.calls.ensure, 1);
     assert.equal(h.calls.fit, 0);
   });
 }
+
+test('a very long quiet hide still rebuilds the atlas once', t => {
+  const h = harness(t);
+  h.advance(QUIET_TAB_REVEAL_MAX_HIDDEN_MS + 1000);
+  h.reveal();
+  assert.equal(h.calls.clear, 1);
+  h.advance(600);
+  assert.equal(h.calls.clear, 1);
+});
 
 test('late changed bounds still receive a settling fit', t => {
   const h = harness(t);
@@ -171,7 +192,8 @@ test('focus restoration and its 50ms retry do not refit unchanged bounds', t => 
   h.focus(); h.advance(50); h.focus(); h.advance(500);
   assert.equal(h.calls.focus, 2);
   assert.equal(h.calls.fit, 0);
-  assert.equal(h.calls.clear, 1);
+  // Quiet hide: neither the reveal nor the focus retries rebuild the atlas.
+  assert.equal(h.calls.clear, 0);
 });
 
 test('focus restoration recovers changed bounds once and skips settled follow-up timer', t => {
