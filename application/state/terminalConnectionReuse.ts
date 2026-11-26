@@ -39,6 +39,10 @@ type CloneSessionOptions = {
    * Defaults to true (reuse when possible).
    */
   reuseConnection?: boolean;
+  /** Command the clone runs after it connects (e.g. `tmux attach`). */
+  startupCommand?: string;
+  /** Tab name for the clone; defaults to the source's host label. */
+  customName?: string;
 };
 
 function getClonedShellType(
@@ -90,6 +94,8 @@ function createTerminalSessionClone(
     fontSize: session.fontSize,
     fontSizeOverride: session.fontSizeOverride,
     ...(session.ephemeralHost ? { ephemeralHost: true } : {}),
+    ...(options.startupCommand ? { startupCommand: options.startupCommand } : {}),
+    ...(options.customName ? { customName: options.customName } : {}),
     ...(injectsInheritedCwd && options.inheritedCwd ? { pendingInitialCwd: options.inheritedCwd } : {}),
     // Clearing `reuseConnectionFromSessionId` only disables source-specific
     // reuse; without an explicit fresh-connection flag the bridge would still
