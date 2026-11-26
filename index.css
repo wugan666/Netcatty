@@ -666,8 +666,15 @@ html[data-theme-transition] *::after {
   }
 }
 
+/*
+ * Tab indicators animate in a few discrete steps instead of a smooth curve.
+ * A smooth infinite animation makes the compositor produce a new frame on
+ * every vsync for as long as any tab is busy; with a row of active sessions
+ * that kept the GPU process drawing at 60fps around the clock. Stepping gives
+ * the same "still working" pulse with a handful of frames per cycle.
+ */
 .session-activity-dot {
-  animation: session-activity-breathe 1.4s ease-in-out infinite;
+  animation: session-activity-breathe 1.4s steps(4, jump-none) infinite;
 }
 
 @keyframes coding-cli-icon-pulse {
@@ -683,11 +690,11 @@ html[data-theme-transition] *::after {
 }
 
 .coding-cli-icon-busy {
-  animation: coding-cli-icon-pulse 1.1s ease-in-out infinite;
+  animation: coding-cli-icon-pulse 1.1s steps(4, jump-none) infinite;
 }
 
 .coding-cli-icon-waiting {
-  animation: coding-cli-icon-pulse 1.6s ease-in-out infinite;
+  animation: coding-cli-icon-pulse 1.6s steps(4, jump-none) infinite;
 }
 
 .elevate {

@@ -186,8 +186,12 @@ export type TerminalLineTimestampWriteOptions = TerminalLineTimestampDiagnostics
   /** Wall-clock arrival time for this batch, preserved across delayed writes. */
   timestampDate?: Date;
   /**
-   * Deprecated for recording: write path always maintains the per-second ledger
-   * (record/render separation). Kept for call-site compatibility; ignored.
+   * Whether this terminal currently shows the timestamp gutter. `false` skips
+   * the per-second ledger entirely: recording costs marker registration and a
+   * ledger rebase on every write — about as much as xterm's own parse — and
+   * with many busy sessions that is paid for a gutter nobody is looking at.
+   * Timestamps then start from the moment the gutter is turned on. Leaving it
+   * undefined keeps the always-record behavior.
    */
   enabled?: boolean;
 };
@@ -2069,8 +2073,8 @@ export const writeTerminalDataWithLineTimestamps = (
     });
   };
 
-  // True flood: skip ledger work entirely (same product rule as before).
-  if (shouldSkipTerminalLineTimestamps(term)) {
+  // Gutter off, or true flood: skip ledger work entirely.
+  if (options?.enabled === false || shouldSkipTerminalLineTimestamps(term)) {
     const store = getTimestampStore(term);
     store.segmenter.setAlternateScreenActive(
       ((term.buffer?.active as { type?: string } | undefined)?.type) === "alternate",
