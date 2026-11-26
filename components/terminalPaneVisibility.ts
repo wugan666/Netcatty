@@ -22,6 +22,7 @@ export type TerminalPaneStyle = {
   width?: string | number;
   height?: string | number;
   visibility?: string;
+  contentVisibility?: string;
   transform?: string;
   pointerEvents?: string;
   zIndex?: number;
@@ -75,6 +76,13 @@ export function resolveInactiveTerminalPaneStyle<T extends TerminalPaneStyle>(
     left: 0,
     transform: "translateX(calc(-100vw - 100%))",
     visibility: hibernateHiddenTabs ? "hidden" : "visible",
+    // Skip style, layout and paint for the whole hidden pane. Off-screen panes
+    // otherwise still take part in every document layout: with a couple dozen
+    // sessions open, each tab switch spent ~100ms in one synchronous layout of
+    // panes nobody can see. Unlike display:none this keeps the pane's box, the
+    // canvas contents and scroll state, and script layout queries inside it
+    // (xterm fit/measure) are still answered on demand.
+    contentVisibility: "hidden",
     pointerEvents: "none",
     zIndex: 0,
     ...((hibernateHiddenTabs || preserveLastVisibleSize) && lastVisibleSize
