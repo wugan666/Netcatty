@@ -15,6 +15,7 @@ import {
 } from "../../domain/vaultGroupSelection";
 import { STORAGE_KEY_VAULT_HOST_PANEL_WIDTH } from "@/infrastructure/config/storageKeys.ts";
 import { VaultHostListSection } from "./VaultHostListSection";
+import { VAULT_HOST_GRID_MIN_CARD_WIDTH } from "./vaultHostGridLayout";
 import { LocalShellHostDetailsPanel } from "../LocalShellHostDetailsPanel";
 import { VaultImportProgressPanel } from "./ImportVaultDialog";
 import {
@@ -126,6 +127,106 @@ function VaultConnectionLogsSection({
       onClearUnsaved={clearUnsavedConnectionLogs}
       onOpenLogView={onOpenLogView}
     />
+  );
+}
+
+export function useVaultSidebarResize({
+  effectiveSidebarWidth,
+  minWidth,
+  maxWidth,
+  setSidebarWidth,
+  handleSidebarWidthCommit,
+  setIsSidebarResizing,
+}: {
+  effectiveSidebarWidth: number;
+  minWidth: number;
+  maxWidth: number;
+  setSidebarWidth: (width: number) => void;
+  handleSidebarWidthCommit: (width: number) => void;
+  setIsSidebarResizing: (resizing: boolean) => void;
+}) {
+  const resizeCleanupRef = React.useRef<(() => void) | null>(null);
+
+  React.useEffect(() => () => resizeCleanupRef.current?.(), []);
+
+  return React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      resizeCleanupRef.current?.();
+
+      const startX = event.clientX;
+      const startWidth = effectiveSidebarWidth;
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+
+      setIsSidebarResizing(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const clampWidth = (value: number) =>
+        Math.max(minWidth, Math.min(maxWidth, value));
+
+      let rafId: number | null = null;
+      let pendingWidth: number | null = null;
+
+      const cancelPendingFrame = () => {
+        if (rafId !== null) {
+          window.cancelAnimationFrame?.(rafId);
+          rafId = null;
+        }
+        pendingWidth = null;
+      };
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const nextWidth = clampWidth(startWidth + moveEvent.clientX - startX);
+        if (typeof window.requestAnimationFrame !== "function") {
+          setSidebarWidth(nextWidth);
+          return;
+        }
+        pendingWidth = nextWidth;
+        if (rafId !== null) return;
+        rafId = window.requestAnimationFrame(() => {
+          rafId = null;
+          if (pendingWidth !== null) {
+            const committedWidth = pendingWidth;
+            pendingWidth = null;
+            setSidebarWidth(committedWidth);
+          }
+        });
+      };
+
+      const cleanup = () => {
+        resizeCleanupRef.current = null;
+        cancelPendingFrame();
+        setIsSidebarResizing(false);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+      };
+
+      const handlePointerUp = (upEvent: PointerEvent) => {
+        cleanup();
+        const nextWidth = clampWidth(startWidth + upEvent.clientX - startX);
+        setSidebarWidth(nextWidth);
+        handleSidebarWidthCommit(nextWidth);
+      };
+
+      resizeCleanupRef.current = cleanup;
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+    },
+    [
+      effectiveSidebarWidth,
+      handleSidebarWidthCommit,
+      maxWidth,
+      minWidth,
+      setIsSidebarResizing,
+      setSidebarWidth,
+    ],
   );
 }
 
@@ -500,44 +601,14 @@ export function VaultViewLayout({ ctx }: { ctx: VaultViewLayoutContext }) {
     },
     [onUpdateKeys],
   );
-  const handleSidebarResizeStart = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const startX = event.clientX;
-      const startWidth = effectiveSidebarWidth;
-      const previousCursor = document.body.style.cursor;
-      const previousUserSelect = document.body.style.userSelect;
-
-      setIsSidebarResizing(true);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-
-      const clampWidth = (value: number) =>
-        Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, value));
-
-      const handlePointerMove = (moveEvent: PointerEvent) => {
-        setSidebarWidth(clampWidth(startWidth + moveEvent.clientX - startX));
-      };
-      const handlePointerUp = (upEvent: PointerEvent) => {
-        const nextWidth = clampWidth(startWidth + upEvent.clientX - startX);
-        setSidebarWidth(nextWidth);
-        handleSidebarWidthCommit(nextWidth);
-        setIsSidebarResizing(false);
-        document.body.style.cursor = previousCursor;
-        document.body.style.userSelect = previousUserSelect;
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
-      };
-
-      window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", handlePointerUp);
-      window.addEventListener("pointercancel", handlePointerUp);
-    },
-    [effectiveSidebarWidth, handleSidebarWidthCommit, setSidebarWidth],
-  );
+  const handleSidebarResizeStart = useVaultSidebarResize({
+    effectiveSidebarWidth,
+    minWidth: sidebarMinWidth,
+    maxWidth: sidebarMaxWidth,
+    setSidebarWidth,
+    handleSidebarWidthCommit,
+    setIsSidebarResizing,
+  });
 
   React.useEffect(() => {
     if (!isHostAsideOpen) return;
@@ -860,7 +931,13 @@ export function VaultViewLayout({ ctx }: { ctx: VaultViewLayoutContext }) {
         data-section="vault-stage"
       >
         <div
-          className="relative flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background shadow-sm"
+          className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background shadow-sm"
+          // Keep one host card and its existing px-4 padding beside an editor.
+          // CSS resolves this against the current surface, including when the
+          // retained vault is shown again; remembered widths remain untouched.
+          style={{
+            ["--aside-inline-max-width" as string]: `max(0px, calc(100% - ${VAULT_HOST_GRID_MIN_CARD_WIDTH + 32}px))`,
+          }}
           data-section="vault-surface"
         >
           {/* Main Area */}

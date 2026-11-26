@@ -24,6 +24,7 @@ export interface SftpPaneTreeViewProps {
   onOpenFileWith?: (entry: SftpFileEntry, fullPath?: string) => void;
   onEditFile?: (entry: SftpFileEntry, fullPath?: string) => void;
   onDownloadFile?: (entry: SftpFileEntry, fullPath?: string) => void;
+  onDownloadFiles?: (entries: SftpFileEntry[], fullPaths?: string[]) => void;
   onExtractArchive?: (entry: SftpFileEntry, fullPath?: string) => void | Promise<void>;
   onCreateArchive?: (sourcePaths: string[]) => void;
   onEditPermissions?: (entry: SftpFileEntry, fullPath?: string) => void;
@@ -33,6 +34,8 @@ export interface SftpPaneTreeViewProps {
   onUploadExternalFiles?: (dataTransfer: DataTransfer, targetPath?: string) => Promise<void>;
   onUploadExternalFileList?: (fileList: FileList, targetPath?: string) => Promise<void>;
   onUploadExternalFolder?: (targetPath?: string) => Promise<void>;
+  onInsertPathToTerminal?: (path: string) => void;
+  onCdInTerminal?: (dirPath: string) => void;
   sorting: UseSftpPaneSortingResult;
   reloadRequest: { token: number; paths?: string[]; full?: boolean };
 }

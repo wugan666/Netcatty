@@ -186,6 +186,14 @@ class PluginHostInteractionService {
   #finish(entry, result, error) {
     if (this.pending.get(entry.id) !== entry) return false;
     this.pending.delete(entry.id);
+    entry.terminalWatch?.dispose();
+    entry.terminalWatch = null;
+    // A delivered stream outlives its request; cancelled/invalid results must
+    // tear down pending SSH authentication and any late-arriving connection.
+    const deliveredStream = !error && result?.handleId && validateResult(result);
+    if (deliveredStream) entry.streamDelivered = true;
+    if (!deliveredStream) { entry.controller.abort(); entry.disposeResult?.(); }
+    entry.disposeResult = null;
     entry.actionToken = null;
     entry.previewText = undefined;
     clearTimeout(entry.timer);
@@ -281,13 +289,14 @@ class PluginHostInteractionService {
     const now = this.clock();
     return new Promise((resolve, reject) => {
       const entry = {
-        id: randomUUID(), context, params, sender, resolve, reject, terminalTarget, permissionMode,
-        expiresAt: now + this.timeoutMs, phase: "request", actionToken: null,
+        id: randomUUID(), context, params, sender, resolve, reject, terminalTarget, permissionMode, controller: new AbortController(),
+        expiresAt: now + this.timeoutMs, phase: "request", actionToken: null, terminalWatch: null,
       };
       entry.onAbort = () => this.#finish(entry, null, fail("cancelled", "Host interaction was cancelled"));
       entry.timer = setTimeout(() => this.#finish(entry, null, fail("deadlineExceeded", "Host interaction expired")), this.timeoutMs);
       entry.timer.unref?.();
       this.pending.set(entry.id, entry);
+      if (terminalTarget) entry.terminalWatch = this.terminalSelection.watch();
       context.signal?.addEventListener("abort", entry.onAbort, { once: true });
       if (context.signal?.aborted) { entry.onAbort(); return; }
       try {
@@ -301,7 +310,7 @@ class PluginHostInteractionService {
     });
   }
 
-  async respond(sender, response) {
+  async respond(sender, response, nativeOptions) {
     this.#assertWindow(sender);
     if (!validateResponse(response)) throw fail("invalidArgument", "Host interaction response is invalid");
     const entry = this.pending.get(response.requestId);
@@ -323,10 +332,10 @@ class PluginHostInteractionService {
         return this.#finish(entry, { cancelled: true });
       }
       if (this.vaultService?.isRequest(entry.params)) {
-        const outcome = await this.vaultService.respond(entry, response);
+        const outcome = await this.vaultService.respond(entry, response, nativeOptions);
         await entry.context.assertActive();
         this.#assertWindow(sender);
-        if (this.pending.get(entry.id) !== entry) return false;
+        if (this.pending.get(entry.id) !== entry) { entry.disposeResult?.(); return false; }
         if (outcome.result) {
           this.#audit(entry, "completed");
           return this.#finish(entry, outcome.result);
@@ -391,7 +400,7 @@ class PluginHostInteractionService {
       }
       return this.#finish(entry, { cancelled: false, value });
     } catch (error) {
-      this.#finish(entry, null, error);
+      if (!this.#finish(entry, null, error)) entry.disposeResult?.();
       throw error;
     }
   }

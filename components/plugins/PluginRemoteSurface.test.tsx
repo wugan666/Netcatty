@@ -13,7 +13,7 @@ test('plugin surface forwards its own input and contains malformed updates and r
   let captured: ShadowRoot | undefined;
   const nativeAttach = dom.window.Element.prototype.attachShadow;
   dom.window.Element.prototype.attachShadow = function (options) { captured = nativeAttach.call(this, options) as unknown as ShadowRoot; return captured as unknown as globalThis.ShadowRoot; };
-  const { default: React, act } = await import('react');
+  const { act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const { PluginRemoteSurface } = await import('./PluginRemoteSurface');
   const events: unknown[] = [];
@@ -36,9 +36,30 @@ test('plugin surface forwards its own input and contains malformed updates and r
     assert.equal(events.length, 2);
     await act(async () => { root.render(<PluginRemoteSurface tree={tree} css="@import 'https://bad.example/x';" onEvent={() => {}} />); });
     assert.equal(document.querySelector('[role=alert]')?.textContent, 'Unable to display plugin view.');
+    const optionA = { id: 'a', type: 1, element: 'option', attributes: { selected: '' }, children: [{ id: 'at', type: 3, data: '  First\n option  ' }] };
+    const optionB = { id: 'b', type: 1, element: 'option', attributes: {}, children: [{ id: 'bt', type: 3, data: 'Second' }] };
+    const controls = { children: [
+      { id: 'select', type: 1, element: 'select', attributes: { multiple: '' }, children: [optionA, optionB] },
+      { id: 'textarea', type: 1, element: 'textarea', attributes: {}, children: [{ id: 'ta', type: 3, data: 'Hello' }, { id: 'tb', type: 3, data: ' world' }] },
+    ] };
+    const renderControls = async () => act(async () => root.render(<PluginRemoteSurface tree={{ ...controls }} css="" onEvent={(event) => events.push(event)} />));
+    await renderControls();
+    const select = captured!.querySelector('select')!;
+    assert.deepEqual([...select.selectedOptions].map((option) => option.value), ['First option']);
+    assert.equal(captured!.querySelector('textarea')!.value, 'Hello world');
+    await act(async () => {
+      select.options[0].selected = false; select.options[1].selected = true;
+      select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+    assert.deepEqual(events.at(-1), { nodeId: 'select', type: 'change', value: 'Second', values: ['Second'] });
+    optionA.attributes = {} as typeof optionA.attributes;
+    optionB.attributes = { selected: '' };
+    await renderControls();
+    assert.deepEqual([...select.selectedOptions].map((option) => option.value), ['Second'], 'acknowledgement keeps native option text values selected');
+
     let clicks = 0;
-    const renderView = async (nextTree: unknown) => act(async () => root.render(<>
-      <PluginRemoteSurface key="view" tree={nextTree} css="" onEvent={() => {}} />
+    const renderView = async (nextTree: unknown, viewKey = 'view') => act(async () => root.render(<>
+      <PluginRemoteSurface key={viewKey} tree={nextTree} css="" onEvent={() => {}} />
       <button id="canary" onClick={() => clicks++}>Host canary</button>
       <PluginRemoteSurface key="sibling" tree={tree} css="" onEvent={() => {}} />
     </>));
@@ -48,15 +69,17 @@ test('plugin surface forwards its own input and contains malformed updates and r
     assert.ok(document.querySelector('[role=alert]'));
     await act(async () => document.getElementById('canary')!.click());
     assert.equal(clicks, 1);
-    // Validated data can still hit a React rendering constraint. Contain that
-    // descendant throw too, independently of the policy rejection above.
+    // Unexpected rendering failures stay within this plugin, including layout effects.
     const originalError = console.error;
+    const prevAttach = dom.window.Element.prototype.attachShadow;
     try {
       console.error = () => {};
-      await renderView({ children: [{ id: 'bad', type: 1, element: 'textarea', attributes: {}, children: [
-        { id: 'a', type: 3, data: 'one' }, { id: 'b', type: 3, data: 'two' },
-      ] }] });
-    } finally { console.error = originalError; }
+      dom.window.Element.prototype.attachShadow = () => { throw new Error('Synthetic surface failure'); };
+      await renderView(tree, 'broken-surface');
+    } finally {
+      dom.window.Element.prototype.attachShadow = prevAttach;
+      console.error = originalError;
+    }
     assert.equal(document.querySelectorAll('[data-plugin-remote-surface]').length, 1);
     assert.ok(document.querySelector('[role=alert]'));
     await act(async () => document.getElementById('canary')!.click());
@@ -126,5 +149,108 @@ test('closed-shadow editing keeps app close shortcuts in Vault, sidebar, tabs an
     dom.window.removeEventListener('keydown', capture as unknown as EventListener, true);
     await act(async () => root.unmount()); dom.window.close();
     for (const [key, value] of saved) { if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key); }
+  }
+});
+
+test('PluginRemoteSurface avoids JSON/form hook work on text and plain elements and preserves unchanged subtrees', async () => {
+  const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'http://localhost', pretendToBeVisual: true });
+  const saved = new Map<string, PropertyDescriptor | undefined>();
+  for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Event', 'MouseEvent', 'ShadowRoot']) {
+    saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'window' ? dom.window : dom.window[key as keyof typeof dom.window] });
+  }
+  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, writable: true, value: true });
+
+  let captured: ShadowRoot | undefined;
+  const nativeAttach = dom.window.Element.prototype.attachShadow;
+  dom.window.Element.prototype.attachShadow = function (options) {
+    captured = nativeAttach.call(this, options) as unknown as ShadowRoot;
+    return captured as unknown as globalThis.ShadowRoot;
+  };
+
+  const { act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { PluginRemoteSurface } = await import('./PluginRemoteSurface');
+
+  const stableSubtree = {
+    id: 'stable-list',
+    type: 1,
+    element: 'div',
+    attributes: { class: 'list' },
+    children: Array.from({ length: 40 }, (_, i) => ({
+      id: `row-${i}`,
+      type: 1,
+      element: 'span',
+      attributes: {},
+      children: [{ id: `text-${i}`, type: 3, data: `Item ${i}` }],
+    })),
+  };
+  const onEvent = () => {};
+  const root = createRoot(document.getElementById('root')!);
+
+  const origStringify = JSON.stringify;
+  const origParse = JSON.parse;
+  let stringifyCalls = 0;
+  let parseCalls = 0;
+  JSON.stringify = ((...args: Parameters<typeof JSON.stringify>) => {
+    stringifyCalls++;
+    return origStringify(...args);
+  }) as typeof JSON.stringify;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parseCalls++;
+    return origParse(...args);
+  }) as typeof JSON.parse;
+
+  try {
+    await act(async () => {
+      root.render(
+        <PluginRemoteSurface
+          tree={{
+            children: [
+              stableSubtree,
+              { id: 'comment-1', type: 8, data: 'ignored' },
+              { id: 'counter', type: 1, element: 'p', attributes: {}, children: [{ id: 'c-text', type: 3, data: 'Count 0' }] },
+              { id: 'input-1', type: 1, element: 'input', attributes: { type: 'text', value: 'hello' }, children: [] },
+            ],
+          }}
+          css=".list{display:grid}"
+          onEvent={onEvent}
+        />,
+      );
+    });
+    assert.equal(stringifyCalls, 0, 'initial mount of text, plain, and input elements must not invoke JSON.stringify');
+    assert.equal(parseCalls, 0, 'initial mount of text, plain, and input elements must not invoke JSON.parse');
+    const firstListNode = captured!.querySelector('.list');
+    assert.ok(firstListNode);
+    assert.equal(captured!.querySelector('p')?.textContent, 'Count 0');
+    assert.equal(captured!.querySelector('input')?.value, 'hello');
+
+    await act(async () => {
+      root.render(
+        <PluginRemoteSurface
+          tree={{
+            children: [
+              stableSubtree,
+              { id: 'comment-1', type: 8, data: 'ignored' },
+              { id: 'counter', type: 1, element: 'p', attributes: {}, children: [{ id: 'c-text', type: 3, data: 'Count 1' }] },
+              { id: 'input-1', type: 1, element: 'input', attributes: { type: 'text', value: 'world' }, children: [] },
+            ],
+          }}
+          css=".list{display:grid}"
+          onEvent={onEvent}
+        />,
+      );
+    });
+    assert.equal(parseCalls, 0, 're-rendering text, plain, and input elements must invoke zero JSON.parse calls');
+    assert.equal(captured!.querySelector('.list'), firstListNode, 'unchanged plain subtree preserves DOM identity');
+    assert.equal(captured!.querySelector('p')?.textContent, 'Count 1');
+    assert.equal(captured!.querySelector('input')?.value, 'world');
+  } finally {
+    JSON.stringify = origStringify;
+    JSON.parse = origParse;
+    await act(async () => root.unmount());
+    dom.window.close();
+    for (const [key, value] of saved) { if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key); }
+    Reflect.deleteProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
   }
 });

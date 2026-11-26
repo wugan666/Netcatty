@@ -1,6 +1,5 @@
 "use strict";
 
-let bridgesRegistered = false;
 let cloudSyncSessionPassword = null;
 const perfTrace = require("../perfTrace.cjs");
 const { readClipboardFiles, readClipboardImage, hasClipboardImage } = require("../bridges/clipboardFiles.cjs");
@@ -9,6 +8,11 @@ const {
   installWindowAttention,
   registerExternalMcpApprovalAlertHandlers,
 } = require("../bridges/windowAttention.cjs");
+const { handleZmodemDragDropUpload } = require("../bridges/zmodemDragDropHandler.cjs");
+const {
+  resolveSaveDialogDefaultPath,
+  resolveDirectoryDialogDefaultPath,
+} = require("./dialogDefaultPath.cjs");
 
 const excludedFigSpecPrefixes = ["aws", "gcloud", "az"];
 
@@ -18,6 +22,85 @@ function isExcludedFigSpec(commandName) {
 
 function filterExcludedFigSpecs(specNames) {
   return specNames.filter((name) => !isExcludedFigSpec(name));
+}
+
+// The bundled specs for these commands describe the native BSD tools. Their
+// root-level local overrides describe GNU tools, so they must not replace the
+// bundled versions in macOS sessions.
+const macBundledFigSpecs = new Set(["base64", "date"]);
+
+async function loadFigSpec(electronDir, commandName, hostOs) {
+  // The renderer supplies command names; never allow them to escape the specs
+  // directory or resolve to excluded packages.
+  if (typeof commandName !== "string" || !commandName || commandName.startsWith("/") ||
+      commandName.startsWith("\\") || commandName.includes("..") ||
+      !/^[@a-zA-Z0-9._/+-]+$/.test(commandName) || isExcludedFigSpec(commandName)) return null;
+
+  const fs = require("fs");
+  const path = require("path");
+  const { pathToFileURL } = require("url");
+  const specDir = path.join(electronDir, "specs");
+  const platformSpec = hostOs === "macos" ? path.join(specDir, "macos", `${commandName}.js`) : null;
+  const localSpec = path.join(specDir, `${commandName}.js`);
+  const bundledSpec = path.join(electronDir, "..", "node_modules", "@withfig", "autocomplete", "build", `${commandName}.js`);
+  const specFile = platformSpec && fs.existsSync(platformSpec)
+    ? platformSpec
+    : !(hostOs === "macos" && macBundledFigSpecs.has(commandName)) && fs.existsSync(localSpec)
+      ? localSpec
+      : bundledSpec;
+  if (!fs.existsSync(specFile)) return null;
+  const mod = await import(pathToFileURL(specFile).href);
+  const spec = mod.default?.default ?? mod.default ?? null;
+  // IPC requires serializable data — JSON round-trip strips functions/symbols.
+  return spec ? JSON.parse(JSON.stringify(spec)) : null;
+}
+
+async function listFigSpecs(electronDir, hostOs) {
+  const fs = require("fs");
+  const path = require("path");
+  const mod = await import("@withfig/autocomplete");
+  const figSpecs = mod.default || [];
+  const specDir = path.join(electronDir, "specs");
+  const localNames = [];
+  // A macOS-only command must not appear in another session's command list:
+  // it would be suggested, then always load as null.
+  const dirs = hostOs === "macos" ? [specDir, path.join(specDir, "macos")] : [specDir];
+
+  // Every directory is optional and must be read independently.
+  for (const dir of dirs) {
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.name.endsWith(".js")) continue;
+        let isFile = entry.isFile();
+        if (entry.isSymbolicLink()) {
+          try { isFile = fs.statSync(path.join(dir, entry.name)).isFile(); } catch { /* dangling or inaccessible */ }
+        }
+        if (isFile) localNames.push(entry.name.slice(0, -3));
+      }
+    } catch { /* optional specs directory is unavailable */ }
+  }
+  return filterExcludedFigSpecs([...new Set([...figSpecs, ...localNames])]);
+}
+
+function registerFigSpecHandlers(ipcMain, electronDir) {
+  ipcMain.handle("netcatty:figspec:list", async (_event, hostOs) => {
+    try {
+      return await listFigSpecs(electronDir, hostOs);
+    } catch (err) {
+      console.warn("[Main] Failed to load fig spec list:", err?.message || err);
+      return [];
+    }
+  });
+  ipcMain.handle("netcatty:figspec:load", async (_event, commandName, hostOs) => {
+    try {
+      return await loadFigSpec(electronDir, commandName, hostOs);
+    } catch (err) {
+      // A broken spec module must not reject the renderer's invoke; completion
+      // degrades to "no suggestions" while the main log keeps the cause.
+      console.warn("[Main] Failed to load fig spec:", commandName, err?.message);
+      return null;
+    }
+  });
 }
 
 function waitForApplicationSpawn(child, requireCleanLauncherExit = false) {
@@ -46,6 +129,96 @@ function waitForApplicationSpawn(child, requireCleanLauncherExit = false) {
     child.once("error", onError);
     if (requireCleanLauncherExit) child.once("close", onClose);
   });
+}
+
+async function launchFileWithApplication({
+  filePath,
+  appPath,
+  platform = process.platform,
+  spawnImpl = require("node:child_process").spawn,
+}) {
+  console.log(`[Main] Opening file with application:`);
+  console.log(`[Main]   File: ${filePath}`);
+  console.log(`[Main]   App: ${appPath}`);
+  console.log(`[Main]   Platform: ${platform}`);
+
+  let child;
+  try {
+    // On macOS, `open -a` is a short-lived launcher whose exit we await via
+    // waitForApplicationSpawn(..., true), so piping stderr only captures launch
+    // errors and destroying it afterwards cannot SIGPIPE the launched GUI app.
+    // On Linux/Windows we launch the detached GUI app directly and return on
+    // "spawn", so use stdio: "ignore" to avoid both leaked pipe FDs and SIGPIPE
+    // from closing the read end while the detached app writes warnings to stderr.
+    const spawnOptions = {
+      detached: true,
+      stdio: platform === "darwin" ? ["ignore", "ignore", "pipe"] : "ignore",
+    };
+    if (platform === "darwin") {
+      // On macOS, use 'open' command with -a flag for specific app
+      const args = ["-a", appPath, filePath];
+      console.log(`[Main]   Command: open ${args.join(' ')}`);
+      child = spawnImpl("open", args, spawnOptions);
+    } else if (platform === "win32") {
+      // Spawn the selected executable directly. This preserves paths with
+      // spaces without a shell and reports an invalid app path as ENOENT.
+      console.log(`[Main]   Command: ${appPath} ${filePath}`);
+      child = spawnImpl(appPath, [filePath], spawnOptions);
+    } else {
+      // On Linux, spawn the app with the file
+      console.log(`[Main]   Command: ${appPath} ${filePath}`);
+      child = spawnImpl(appPath, [filePath], spawnOptions);
+    }
+
+    // Log any errors from the child process
+    child.on("error", (err) => {
+      console.error(`[Main] Failed to start application:`, err.message);
+    });
+
+    child.stderr?.on("data", (data) => {
+      // On Windows, stderr may be encoded in GBK/CP936, try to decode
+      if (platform === "win32") {
+        try {
+          // Try decoding as GBK (code page 936) for Chinese Windows
+          const { TextDecoder } = require("node:util");
+          const decoder = new TextDecoder("gbk");
+          const decoded = decoder.decode(data);
+          console.log(`[Main] Application stderr: ${decoded}`);
+        } catch {
+          // Fallback to hex dump if decoding fails
+          console.log(`[Main] Application stderr (hex): ${data.toString("hex")}`);
+        }
+      } else {
+        console.error(`[Main] Application stderr:`, data.toString());
+      }
+    });
+
+    child.on("exit", (code, signal) => {
+      // On Windows, many apps (like Notepad++) pass the file to an existing instance
+      // and immediately exit with code 1, this is normal behavior
+      if (code !== 0 && code !== null) {
+        if (platform === "win32") {
+          console.log(`[Main] Application exited with code: ${code}, signal: ${signal} (this may be normal for single-instance apps)`);
+        } else {
+          console.warn(`[Main] Application exited with code: ${code}, signal: ${signal}`);
+        }
+      } else {
+        console.log(`[Main] Application started successfully`);
+      }
+    });
+
+    // spawn() reports ENOENT and similar launch failures asynchronously.
+    // Do not acknowledge success until the child has actually started, so
+    // the renderer can unregister and delete its downloaded temp file.
+    await waitForApplicationSpawn(child, platform === "darwin");
+    child.stderr?.destroy?.();
+    child.unref();
+    return true;
+  } catch (err) {
+    child?.stderr?.destroy?.();
+    console.error(`[Main] Error opening file with application:`, err);
+    throw err;
+  }
 }
 
 function createCloudSyncSessionPasswordReader({
@@ -581,111 +754,11 @@ function createBridgeRegistrar(context) {
           webContentsId: event?.sender?.id,
         });
       }
-      const { sessionId, files, uploadCommand } = payload || {};
-      const session = sessions.get(sessionId);
-      if (!session?.zmodemSentry?.queueDragDropUpload) {
-        return { success: false, error: "ZMODEM upload is not available for this session" };
-      }
-      if (session.zmodemSentry.isActive?.()) {
-        return { success: false, error: "ZMODEM transfer already in progress" };
-      }
-
-      const filePaths = [];
-      const remoteNames = [];
-      const tempPaths = [];
-
-      for (const file of files || []) {
-        if (!file?.name) continue;
-        let localPath = file.path;
-        if (!localPath && file.data) {
-          localPath = tempDirBridge.getTempFilePath(file.name);
-          await fs.promises.writeFile(localPath, Buffer.from(file.data));
-          tempPaths.push(localPath);
-        }
-        if (!localPath) continue;
-        try {
-          await fs.promises.access(localPath);
-        } catch {
-          continue;
-        }
-        filePaths.push(localPath);
-        remoteNames.push(file.remoteName || path.basename(localPath));
-      }
-
-      if (!filePaths.length) {
-        for (const tempPath of tempPaths) {
-          try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
-        }
-        return { success: false, error: "No readable files to upload" };
-      }
-
-      try {
-        session.zmodemSentry.queueDragDropUpload({
-          filePaths,
-          remoteNames,
-          uploadCommand: uploadCommand || "rz -y\r",
-          tempPaths,
-        });
-        return { success: true };
-      } catch (err) {
-        for (const tempPath of tempPaths) {
-          try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
-        }
-        return { success: false, error: err?.message || String(err) };
-      }
+      return handleZmodemDragDropUpload({ sessions, tempDirBridge, fs, path }, payload);
     });
   
-    // Fig autocomplete spec loader — uses dynamic import() since @withfig/autocomplete is ESM
-    ipcMain.handle("netcatty:figspec:list", async () => {
-      try {
-        const fs = require("fs");
-        const mod = await import("@withfig/autocomplete");
-        const figSpecs = mod.default || [];
-        // Merge local specs (covers commands missing from @withfig/autocomplete)
-        const localSpecDir = path.join(electronDir, "specs");
-        let localNames = [];
-        try {
-          localNames = fs.readdirSync(localSpecDir)
-            .filter(f => f.endsWith(".js"))
-            .map(f => f.slice(0, -3));
-        } catch { /* no local specs dir */ }
-        const merged = filterExcludedFigSpecs([...new Set([...figSpecs, ...localNames])]);
-        return merged;
-      } catch (err) {
-        console.warn("[Main] Failed to load fig spec list:", err?.message || err);
-        return [];
-      }
-    });
-    ipcMain.handle("netcatty:figspec:load", async (_event, commandName) => {
-      try {
-        // Sanitize: reject absolute paths, path traversal, and non-spec characters
-        if (!commandName || commandName.startsWith("/") || commandName.startsWith("\\") ||
-            commandName.includes("..") || !/^[@a-zA-Z0-9._/+-]+$/.test(commandName)) return null;
-        if (isExcludedFigSpec(commandName)) return null;
-        const { pathToFileURL } = require("url");
-        const fs = require("fs");
-  
-        // Try local specs first (covers commands missing from @withfig/autocomplete)
-        const localSpec = path.join(electronDir, "specs", `${commandName}.js`);
-        if (fs.existsSync(localSpec)) {
-          const mod = await import(pathToFileURL(localSpec).href);
-          const spec = mod.default?.default ?? mod.default ?? null;
-          return spec ? JSON.parse(JSON.stringify(spec)) : null;
-        }
-  
-        // Fall back to @withfig/autocomplete
-        // Can't use `import("@withfig/autocomplete/build/...")` because the package's
-        // "exports" field restricts allowed import paths. Use file URL to bypass.
-        const specFile = path.join(electronDir, "..", "node_modules", "@withfig", "autocomplete", "build", `${commandName}.js`);
-        const mod = await import(pathToFileURL(specFile).href);
-        const spec = mod.default?.default ?? mod.default ?? null;
-        // IPC requires serializable data — JSON round-trip strips functions/symbols
-        return spec ? JSON.parse(JSON.stringify(spec)) : null;
-      } catch (err) {
-        console.warn("[Main] Failed to load fig spec:", commandName, err?.message);
-        return null;
-      }
-    });
+    // Fig specifications are shared by every terminal session.
+    registerFigSpecHandlers(ipcMain, electronDir);
   
     // Local directory listing for autocomplete (local terminal sessions)
     ipcMain.handle("netcatty:local:listdir", async (_event, payload) => {
@@ -843,6 +916,15 @@ function createBridgeRegistrar(context) {
         console.error("[Main] Failed to open terminal popup:", err);
         return { success: false, error: err?.message || "Failed to open terminal popup" };
       }
+    });
+
+    ipcMain.handle("netcatty:window:closeTerminalPopup", async (event, popupId) => {
+      if (typeof popupId !== "string" || !popupId) {
+        return { success: false, error: "Invalid popup ID" };
+      }
+      const requesterWindow = BrowserWindow.fromWebContents(event.sender);
+      const closed = getWindowManager().closeTerminalPopupWindow(popupId, requesterWindow);
+      return { success: Boolean(closed) };
     });
 
     ipcMain.handle("netcatty:window:openEditor", async (event, payload) => {
@@ -1125,78 +1207,7 @@ function createBridgeRegistrar(context) {
   
     // Open a file with a specific application
     ipcMain.handle("netcatty:openWithApplication", async (_event, { filePath, appPath }) => {
-      const { spawn: cpSpawn } = require("node:child_process");
-      
-      console.log(`[Main] Opening file with application:`);
-      console.log(`[Main]   File: ${filePath}`);
-      console.log(`[Main]   App: ${appPath}`);
-      console.log(`[Main]   Platform: ${process.platform}`);
-      
-      try {
-        let child;
-        if (process.platform === "darwin") {
-          // On macOS, use 'open' command with -a flag for specific app
-          const args = ["-a", appPath, filePath];
-          console.log(`[Main]   Command: open ${args.join(' ')}`);
-          child = cpSpawn("open", args, { detached: true, stdio: "pipe" });
-        } else if (process.platform === "win32") {
-          // Spawn the selected executable directly. This preserves paths with
-          // spaces without a shell and reports an invalid app path as ENOENT.
-          console.log(`[Main]   Command: ${appPath} ${filePath}`);
-          child = cpSpawn(appPath, [filePath], { detached: true, stdio: "pipe" });
-        } else {
-          // On Linux, spawn the app with the file
-          console.log(`[Main]   Command: ${appPath} ${filePath}`);
-          child = cpSpawn(appPath, [filePath], { detached: true, stdio: "pipe" });
-        }
-        
-        // Log any errors from the child process
-        child.on("error", (err) => {
-          console.error(`[Main] Failed to start application:`, err.message);
-        });
-        
-        child.stderr?.on("data", (data) => {
-          // On Windows, stderr may be encoded in GBK/CP936, try to decode
-          if (process.platform === "win32") {
-            try {
-              // Try decoding as GBK (code page 936) for Chinese Windows
-              const { TextDecoder } = require("node:util");
-              const decoder = new TextDecoder("gbk");
-              const decoded = decoder.decode(data);
-              console.log(`[Main] Application stderr: ${decoded}`);
-            } catch {
-              // Fallback to hex dump if decoding fails
-              console.log(`[Main] Application stderr (hex): ${data.toString("hex")}`);
-            }
-          } else {
-            console.error(`[Main] Application stderr:`, data.toString());
-          }
-        });
-        
-        child.on("exit", (code, signal) => {
-          // On Windows, many apps (like Notepad++) pass the file to an existing instance
-          // and immediately exit with code 1, this is normal behavior
-          if (code !== 0 && code !== null) {
-            if (process.platform === "win32") {
-              console.log(`[Main] Application exited with code: ${code}, signal: ${signal} (this may be normal for single-instance apps)`);
-            } else {
-              console.warn(`[Main] Application exited with code: ${code}, signal: ${signal}`);
-            }
-          } else {
-            console.log(`[Main] Application started successfully`);
-          }
-        });
-
-        // spawn() reports ENOENT and similar launch failures asynchronously.
-        // Do not acknowledge success until the child has actually started, so
-        // the renderer can unregister and delete its downloaded temp file.
-        await waitForApplicationSpawn(child, process.platform === "darwin");
-        child.unref();
-        return true;
-      } catch (err) {
-        console.error(`[Main] Error opening file with application:`, err);
-        throw err;
-      }
+      return launchFileWithApplication({ filePath, appPath });
     });
 
     // Open a file with the system default application
@@ -1215,11 +1226,11 @@ function createBridgeRegistrar(context) {
     });
   
     // Show save file dialog and return selected path
-    ipcMain.handle("netcatty:showSaveDialog", async (_event, { defaultPath, filters }) => {
+    ipcMain.handle("netcatty:showSaveDialog", async (_event, { defaultPath, filters, directoryOptions }) => {
       const { dialog } = electronModule;
   
       const result = await dialog.showSaveDialog({
-        defaultPath,
+        defaultPath: resolveSaveDialogDefaultPath(defaultPath, directoryOptions, { app, fs, path }),
         filters: filters || [{ name: "All Files", extensions: ["*"] }],
       });
   
@@ -1249,12 +1260,12 @@ function createBridgeRegistrar(context) {
     });
   
     // Select a directory and return the selected path
-    ipcMain.handle("netcatty:selectDirectory", async (_event, { title, defaultPath }) => {
+    ipcMain.handle("netcatty:selectDirectory", async (_event, { title, defaultPath, directoryOptions }) => {
       const { dialog } = electronModule;
   
       const result = await dialog.showOpenDialog({
         title: title || "Select Directory",
-        defaultPath,
+        defaultPath: resolveDirectoryDialogDefaultPath(defaultPath, directoryOptions, { app, fs, path }),
         properties: ["openDirectory", "createDirectory"],
       });
   
@@ -1355,5 +1366,8 @@ module.exports = {
   createBridgeRegistrar,
   filterExcludedFigSpecs,
   isExcludedFigSpec,
+  loadFigSpec,
+  registerFigSpecHandlers,
   _waitForApplicationSpawnForTests: waitForApplicationSpawn,
+  _launchFileWithApplicationForTests: launchFileWithApplication,
 };

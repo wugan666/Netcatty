@@ -106,6 +106,14 @@ test("core MCP descriptions strongly route live terminal work through Netcatty",
   assert.match(vaultHosts?.description || "", /host_open/i);
 });
 
+test("vault_hosts_list exposes optional query and group filters", () => {
+  const vaultHosts = listMcpTools().find((tool) => tool.mcpTool === "vault_hosts_list");
+  assert.ok(vaultHosts);
+  assert.deepEqual(Object.keys(vaultHosts.inputShape).sort(), ["group", "query"]);
+  assert.equal(vaultHosts.inputShape.query.optional, true);
+  assert.equal(vaultHosts.inputShape.group.optional, true);
+});
+
 test("session_close is exposed to agents and external MCP clients", () => {
   const mcpTool = listMcpTools().find((tool) => tool.mcpTool === "session_close");
   assert.ok(mcpTool);
@@ -484,4 +492,12 @@ test("terminal_execute MCP response keeps exit-only non-zero without isError", a
   assert.equal(result.isError, undefined);
   assert.equal(result.content?.[0]?.text, "[exit code: 1]");
   assert.doesNotMatch(result.content?.[0]?.text || "", /Operation failed/);
+});
+
+test("terminal_execute_bulk is MCP-only: no sidebar or global agent exposure", () => {
+  const { listMcpTools, listCattyToolSpecs, listAgentToolSpecs } = require("./toolSurfaces.cjs");
+  const { AGENT_KINDS } = require("../constants.cjs");
+  assert.ok(listMcpTools().some((tool) => tool.mcpTool === "terminal_execute_bulk"));
+  assert.equal(listCattyToolSpecs().some((spec) => spec.capabilityId === "terminal.executeBulk"), false);
+  assert.equal(listAgentToolSpecs(AGENT_KINDS.GLOBAL).some((spec) => spec.capabilityId === "terminal.executeBulk"), false);
 });

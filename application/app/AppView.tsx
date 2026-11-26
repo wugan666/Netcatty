@@ -5,7 +5,11 @@ import { activeTabStore, toEditorTabId, useIsEditorTabActive } from '../state/ac
 import { editorTabStore, tabIsDirty } from '../state/editorTabStore';
 import { releaseEditorTabSaveCoordinator, saveEditorTab } from '../state/editorTabSave';
 import { focusEditorInWindow, popOutEditorTab } from '../state/editorWindowClient';
-import { useTerminalHostTreeLayoutWidth } from '../state/terminalHostTreeStore';
+import {
+  useTerminalHostTreeLayoutTransitionAnimated,
+  useTerminalHostTreeLayoutWidth,
+} from '../state/terminalHostTreeStore';
+import { TERMINAL_HOST_TREE_LEFT_TRANSITION } from '../state/terminalHostTreeAnimation';
 import { TopTabs } from '../../components/TopTabs';
 import { VaultView } from '../../components/VaultView';
 import { QuickAddSnippetDialog } from '../../components/QuickAddSnippetDialog';
@@ -67,12 +71,16 @@ const focusEditorWindowTab = (id: string) => { void focusEditorInWindow(id); };
 const TextEditorTabFallback = ({ tabId }: { tabId: string }) => {
   const isVisible = useIsEditorTabActive(tabId);
   const hostTreeLayoutWidth = useTerminalHostTreeLayoutWidth();
+  const hostTreeLayoutAnimated = useTerminalHostTreeLayoutTransitionAnimated();
   return (
     <div
       style={{
         ...(isVisible ? null : { pointerEvents: 'none', visibility: 'hidden' }),
         zIndex: 20,
         left: hostTreeLayoutWidth,
+        ...(isVisible && hostTreeLayoutAnimated
+          ? { transition: TERMINAL_HOST_TREE_LEFT_TRANSITION }
+          : null),
       }}
       className="netcatty-lazy-fade-in absolute top-0 right-0 bottom-0 min-h-0 flex flex-col bg-background"
       aria-hidden="true"
@@ -265,7 +273,7 @@ function AppViewInner({ domains }: AppViewProps) {
 
   const {
     addShellHistoryEntry, clearAllCommandHistory, removeShellHistoryEntry, addSessionToWorkspace, addToWorkspaceDialog, appendHostToWorkspace, appendLocalTerminalToWorkspace, moveWorkspacePane,
-    clearAndRemoveSource, clearAndRemoveSources, closeLogView, closeSession, closeTabsBatch, closeWorkspace, commitPluginImporterData, commitVaultImportTransaction, commitVaultGroupMutation, copySessionToNewWindowWithCurrentShell, copySessionWithCurrentShell, duplicateSessionWithCurrentShell, copyWorkspaceWithCurrentShell,
+    clearAndRemoveSource, clearAndRemoveSources, closeLogView, closeSession, closeTabsBatch, closeWorkspace, commitPluginImporterData, commitVaultImportTransaction, commitVaultGroupMutation, copySessionToNewWindowWithCurrentShell, moveSessionToNewWindow, copySessionWithCurrentShell, duplicateSessionWithCurrentShell, copyWorkspaceWithCurrentShell,
     convertKnownHostToHost, createWorkspaceFromSessions, createWorkspaceFromTargets, createWorkspaceWithHosts,
     customGroups, currentTerminalTheme, deepLinkHostDraft, draggingSessionId, effectiveKnownHosts, editorTabs, editorWordWrap, emptyVaultConflict,
     followAppTerminalTheme,
@@ -278,7 +286,7 @@ function AppViewInner({ domains }: AppViewProps) {
     passphraseQueue, fidoPromptQueue, protocolSelectHost, proxyProfiles, portForwardingRules, removeSessionFromWorkspace, reorderWorkTabs, reorderWorkspaceSessions,
     resolveEmptyVaultConflict, resolveSessionAppearance, runSnippet, sessionLogsDir, sessionLogsEnabled, sessionLogsFormat, sessionLogsTimestampsEnabled, sessionRenameTarget, sshDebugLogsEnabled,
     sessions, setActiveTabId, setDeepLinkHostDraft, setDraggingSessionId, setEditorWordWrap,
-    setNavigateToSection, setTerminalFontFamilyId, setTerminalFontSize, setVaultFocusRequest, updateSessionFontSize, updateSessionRestoreCwd, updateSessionDynamicTitle, updateSessionCodingCliProvider, clearSessionFontSizeOverride,
+    setNavigateToSection, setTerminalFontFamilyId, setTerminalFontSize, setVaultFocusRequest, updateSessionFontSize, updateSessionRestoreCwd, updateSessionDynamicTitle, updateSessionPromptHost, updateSessionCodingCliProvider, clearSessionFontSizeOverride,
     setWorkspaceFocusedSession, setWorkspaceAnchorChat, sftpAutoOpenSidebar, sftpFollowTerminalCwd, setSftpFollowTerminalCwd, sftpAutoSync, sftpDefaultViewMode, sftpDoubleClickBehavior,
     sftpShowHiddenFiles, sftpUseCompressedUpload, snippetPackages, snippets, splitSessionWithCurrentShell, startSessionRename,
     startWorkspaceRename, submitSessionRename, submitWorkspaceRename, t, terminalFontFamilyId, terminalFontSize, terminalSettings, terminalThemeId, themeById,
@@ -560,6 +568,7 @@ function AppViewInner({ domains }: AppViewProps) {
         onDuplicateSession={duplicateSessionWithCurrentShell}
         tabDoubleClickBehavior={terminalSettings.tabDoubleClickBehavior}
         onCopySessionToNewWindow={copySessionToNewWindowWithCurrentShell}
+        onMoveSessionToNewWindow={moveSessionToNewWindow}
         onEditHost={handleEditHostFromOverlay}
         onRenameWorkspace={startWorkspaceRename}
         onCopyWorkspace={copyWorkspaceWithCurrentShell}
@@ -652,7 +661,7 @@ function AppViewInner({ domains }: AppViewProps) {
             customGroups={customGroups}
             knownHosts={effectiveKnownHosts}
             managedSources={managedSources}
-            sessionCount={sessions.filter((s) => !s.hiddenFromTabs).length}
+            sessionCount={sessions.filter((s) => !s.hiddenFromTabs || s.poppedOut).length}
             hotkeyScheme={hotkeyScheme}
             keyBindings={keyBindings}
             terminalThemeId={terminalThemeId}
@@ -760,6 +769,7 @@ function AppViewInner({ domains }: AppViewProps) {
           onUpdateSessionFontSize={updateSessionFontSize}
           onUpdateSessionRestoreCwd={updateSessionRestoreCwd}
           onUpdateSessionDynamicTitle={updateSessionDynamicTitle}
+          onUpdateSessionPromptHost={updateSessionPromptHost}
           onUpdateSessionCodingCliProvider={updateSessionCodingCliProvider}
           onClearSessionFontSizeOverride={clearSessionFontSizeOverride}
           onUpdateTerminalFontWeight={handleUpdateTerminalFontWeight}

@@ -5,6 +5,8 @@ import { netcattyBridge } from '../../infrastructure/services/netcattyBridge';
 import { createTerminalDirectoryIO } from '../../infrastructure/services/terminalDirectory';
 import { createTerminalDirectoryController } from './terminalDirectoryController';
 import { registerTerminalDirectory } from './terminalDirectoryRegistry';
+import { directoryChangeCommand, COMPLETE_DIRECTORY_CAPABILITIES } from '../../domain/directoryPicker';
+import type { DirectoryPathFlavor } from '../../domain/directoryPath';
 
 export function useTerminalDirectorySession(options: {
   sessionId: string;
@@ -19,8 +21,9 @@ export function useTerminalDirectorySession(options: {
   live.current = options;
   const { sessionId, status, shellType, host } = options;
   const local = host.protocol === 'local';
+  const windowsShell = shellType === 'powershell' || shellType === 'cmd' ? shellType : undefined;
   const supported = (local || ((host.protocol ?? 'ssh') === 'ssh' && !host.moshEnabled && !host.etEnabled))
-    && shellType !== 'powershell' && shellType !== 'cmd'
+    && (!windowsShell || local)
     && host.deviceType !== 'network' && classifyDistroId(host.distro) !== 'network-device'
     && !hostRestrictsExtraSshChannels(host);
   useEffect(() => {
@@ -30,14 +33,19 @@ export function useTerminalDirectorySession(options: {
     let active = true;
     const isCurrent = () => active && live.current.status === 'connected' && live.current.getBackendId() === backendId;
     let unregister = () => {};
-    const register = () => {
+    const register = (pathFlavor: DirectoryPathFlavor = 'posix') => {
       if (!isCurrent()) return;
       const controller = createTerminalDirectoryController({
         sessionId,
         io: createTerminalDirectoryIO(bridge, backendId, {
           local, hostname: host.hostname, username: host.username || 'root', port: host.port,
           encoding: host.sftpEncoding,
+          pathFlavor,
+          windowsShell,
         }, isCurrent),
+        target: { authority: `${local ? 'local' : 'ssh'}:${backendId}`, pathFlavor },
+        capabilities: COMPLETE_DIRECTORY_CAPABILITIES,
+        buildChangeCommand: path => directoryChangeCommand(path, windowsShell ?? 'posix', pathFlavor),
         isCurrent,
         isReady: () => live.current.isReady(),
         publish: cwd => live.current.publish(cwd),
@@ -48,9 +56,10 @@ export function useTerminalDirectorySession(options: {
       // POSIX wrappers on Windows still use win32 PTYs. Neither their cwd nor
       // their path namespace is supported by readLocalSessionCwd/local FS.
       void bridge.getAppInfo?.().then(info => {
-        if (info.platform === 'darwin' || info.platform === 'linux') register();
+        if ((info.platform === 'darwin' || info.platform === 'linux') && !windowsShell) register();
+        else if (info.platform === 'win32' && windowsShell) register('win32');
       }).catch(() => {});
     } else register();
     return () => { active = false; unregister(); };
-  }, [sessionId, status, supported, local, host.hostname, host.username, host.port, host.sftpEncoding, shellType]);
+  }, [sessionId, status, supported, local, host.hostname, host.username, host.port, host.sftpEncoding, windowsShell]);
 }

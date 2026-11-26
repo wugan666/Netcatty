@@ -1,6 +1,6 @@
 import { Folder, FolderLock, Lock, Menu, MoreHorizontal, Plus, Settings, Sparkles } from 'lucide-react';
-import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { fromEditorTabId, isEditorTabId, toEditorTabId, useActiveTabId } from '../application/state/activeTabStore';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { activeTabStore, fromEditorTabId, isEditorTabId, toEditorTabId } from '../application/state/activeTabStore';
 import { topTabsSessionsEqual } from '../domain/topTabsSessionsEqual';
 import { isHostTreeWorkTabSurface } from '../application/app/workTabSurface';
 import { buildTabShortcutNumberById } from '../application/app/tabShortcutTargets';
@@ -15,6 +15,7 @@ import type { DynamicTabTitleMode, KeyBinding, TerminalTabDoubleClickBehavior } 
 
 import { getTopTabInsertionTarget, getWorkspaceSessionDragId, hasWorkspaceSessionDrag } from '../application/state/terminalDragData';
 import {
+  useTerminalHostTreeLayoutTransitionAnimated,
   useTerminalHostTreeLayoutWidth,
   useTerminalHostTreeOpen,
   useToggleTerminalHostTree,
@@ -44,7 +45,10 @@ import {
   WorkspaceTopTab,
 } from './top-tabs/TopTabItems';
 import type { PluginViewTab } from '../application/state/pluginViewTabStore';
-import { TERMINAL_HOST_TREE_ANIMATION_MS } from '../application/state/terminalHostTreeAnimation';
+import {
+  TERMINAL_HOST_TREE_ANIMATION_MS,
+  TERMINAL_HOST_TREE_WIDTH_TRANSITION,
+} from '../application/state/terminalHostTreeAnimation';
 import {
   scheduleAfterInstantThemeSwitch,
   scheduleChromeLayoutAnimation,
@@ -64,6 +68,20 @@ const EMPTY_WORKSPACE_TAB_SESSIONS: WorkspaceTabSessions = { ids: [], sessions: 
 
 export function computeHostTreeTabGutter(hostTreeLayoutWidth: number, toggleRight: number): number {
   return Math.max(0, hostTreeLayoutWidth - toggleRight);
+}
+
+export function getHostTreeTabGutterStyle(
+  hostTreeTabGutter: number,
+  hostTreeGutterExiting: boolean,
+  hostTreeLayoutAnimated: boolean,
+): React.CSSProperties {
+  if (hostTreeGutterExiting) {
+    return { width: hostTreeTabGutter };
+  }
+  return {
+    width: hostTreeTabGutter,
+    transition: hostTreeLayoutAnimated ? TERMINAL_HOST_TREE_WIDTH_TRANSITION : 'none',
+  };
 }
 
 export function shouldShowHostTreeToggle({
@@ -89,6 +107,34 @@ export function shouldShowHostTreeToggle({
     sessionIds,
     workspaceIds,
   });
+}
+
+export function useShowHostTreeToggle({
+  enabled,
+  logViewIds,
+  orderedTabs,
+  sessionIds,
+  workspaceIds,
+}: {
+  enabled: boolean;
+  logViewIds?: ReadonlySet<string>;
+  orderedTabs: readonly string[];
+  sessionIds: ReadonlySet<string>;
+  workspaceIds: ReadonlySet<string>;
+}): boolean {
+  const getSnapshot = useCallback(
+    () =>
+      shouldShowHostTreeToggle({
+        enabled,
+        activeTabId: activeTabStore.getActiveTabId(),
+        logViewIds,
+        orderedTabs,
+        sessionIds,
+        workspaceIds,
+      }),
+    [enabled, logViewIds, orderedTabs, sessionIds, workspaceIds],
+  );
+  return useSyncExternalStore(activeTabStore.subscribe, getSnapshot, getSnapshot);
 }
 
 export function shouldKeepHostTreeToggleSurface({
@@ -145,6 +191,7 @@ interface TopTabsProps {
   onCopySession: (sessionId: string) => void;
   onDuplicateSession?: (sessionId: string) => void;
   onCopySessionToNewWindow: (sessionId: string) => void;
+  onMoveSessionToNewWindow?: (sessionId: string) => void;
   onEditHost?: (host: Host) => void;
   onRenameWorkspace: (workspaceId: string) => void;
   onCopyWorkspace: (workspaceId: string) => void;
@@ -200,6 +247,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   onCopySession,
   onDuplicateSession,
   onCopySessionToNewWindow,
+  onMoveSessionToNewWindow,
   onEditHost,
   onRenameWorkspace,
   onCopyWorkspace,
@@ -262,8 +310,8 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   }, [hotkeyScheme, showTabNumberBadges, showSftpTab, shellOnlyTabNumberShortcuts, orderedTabs, editorTabs]);
   const isHostTreeOpen = useTerminalHostTreeOpen();
   const hostTreeLayoutWidth = useTerminalHostTreeLayoutWidth();
+  const hostTreeLayoutAnimated = useTerminalHostTreeLayoutTransitionAnimated();
   const toggleHostTree = useToggleTerminalHostTree();
-  const activeTabId = useActiveTabId();
   // Presentation (dynamic title / coding-CLI icon) is applied per-tab inside
   // SessionTopTab via usePresentedSession — do not remap the whole bar on
   // every sibling title tick.
@@ -385,14 +433,17 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
     return counts;
   }, [sessions]);
 
+  const orphanSessionIds = useMemo(() => new Set(orphanSessionMap.keys()), [orphanSessionMap]);
+  const workspaceIds = useMemo(() => new Set(workspaceMap.keys()), [workspaceMap]);
+  const logViewIds = useMemo(() => new Set(logViewMap.keys()), [logViewMap]);
+
   const activeWorkTabCount = orderedTabs.length;
-  const showHostTreeToggle = shouldShowHostTreeToggle({
+  const showHostTreeToggle = useShowHostTreeToggle({
     enabled: showHostTreeSidebar,
-    activeTabId,
-    logViewIds: new Set(logViewMap.keys()),
+    logViewIds,
     orderedTabs,
-    sessionIds: new Set(orphanSessionMap.keys()),
-    workspaceIds: new Set(workspaceMap.keys()),
+    sessionIds: orphanSessionIds,
+    workspaceIds,
   });
   const hasHostTreeToggleSurface = shouldKeepHostTreeToggleSurface({
     enabled: showHostTreeSidebar,
@@ -937,6 +988,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
             onCopySession={onCopySession}
             onDuplicateSession={onDuplicateSession}
             onCopySessionToNewWindow={onCopySessionToNewWindow}
+            onMoveSessionToNewWindow={onMoveSessionToNewWindow}
             onEditHost={onEditHost}
             renderBulkCloseItems={renderBulkCloseItems}
             dynamicTabTitleMode={dynamicTabTitleMode}
@@ -959,6 +1011,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
 
         return (
           <WorkspaceTopTab
+            tabDoubleClickBehavior={tabDoubleClickBehavior}
             key={workspace.id}
             workspace={workspace}
             paneCount={paneCount}
@@ -1140,7 +1193,11 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                 'top-tab-host-tree-gutter flex-shrink-0',
                 hostTreeGutterExiting && 'top-tab-host-tree-gutter-exit',
               )}
-              style={{ width: hostTreeTabGutter }}
+              style={getHostTreeTabGutterStyle(
+                hostTreeTabGutter,
+                hostTreeGutterExiting,
+                hostTreeLayoutAnimated,
+              )}
               aria-hidden
             />
           )}
@@ -1157,8 +1214,8 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
             {/* Scrollable container */}
             <div
               ref={tabsContainerRef}
-              className="flex items-end gap-0 overflow-x-auto scrollbar-none app-drag max-w-full"
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              className="top-tab-scroll-viewport min-w-0 flex items-end gap-0 overflow-x-auto scrollbar-none app-no-drag max-w-full"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', ...noDragRegionStyle }}
               onClick={handleScrollableTabClick}
               onDragOver={(e) => {
                 if (hasWorkspaceSessionDrag(e.dataTransfer)) {
@@ -1187,9 +1244,10 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
                   <TooltipContent>{t('topTabs.openQuickSwitcher')}</TooltipContent>
                 </Tooltip>
               )}
-              {/* Draggable spacer - fixed width handle at the end */}
-              <div className="min-w-[20px] h-7 app-drag flex-shrink-0" style={dragRegionStyle} />
             </div>
+            {/* Keep unused space and the drag handle outside the scroll viewport's exclusion. */}
+            <div className="flex-1 app-drag" style={dragRegionStyle} />
+            <div className="min-w-[20px] h-7 app-drag flex-shrink-0 self-end" style={dragRegionStyle} />
 
             {/* Right fade mask */}
             {canScrollRight && (
@@ -1326,6 +1384,7 @@ export const topTabsAreEqual = (prev: TopTabsProps, next: TopTabsProps): boolean
     prev.onCopySession === next.onCopySession &&
     prev.onDuplicateSession === next.onDuplicateSession &&
     prev.onCopySessionToNewWindow === next.onCopySessionToNewWindow &&
+    prev.onMoveSessionToNewWindow === next.onMoveSessionToNewWindow &&
     prev.onEditHost === next.onEditHost &&
     prev.onAppendHostToWorkspace === next.onAppendHostToWorkspace &&
     prev.onCopyWorkspace === next.onCopyWorkspace &&
