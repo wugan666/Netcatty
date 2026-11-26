@@ -451,6 +451,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       onChange: (sessionId, hostname, options) => {
         onUpdateSessionPromptHost?.(sessionId, hostname, options);
       },
+      analysisDelayMs: 200,
     }),
     [onUpdateSessionPromptHost],
   );

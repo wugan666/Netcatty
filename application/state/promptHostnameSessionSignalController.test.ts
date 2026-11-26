@@ -201,3 +201,36 @@ test('prompt host controller forgets closed sessions when pruned', () => {
     ['ssh-1', 'app-prod-01'],
   ]);
 });
+
+test('prompt host controller coalesces the scan when an analysis delay is set', async () => {
+  const changes: Change[] = [];
+  const controller = createPromptHostnameSessionSignalController({
+    getSession,
+    onChange: (sessionId, hostname) => changes.push([sessionId, hostname]),
+    analysisDelayMs: 20,
+  });
+
+  // A burst of streaming chunks must not publish (or scan) per chunk.
+  controller.handleTerminalOutput('ssh-1', '[root@jump.example.com ~]# ');
+  controller.handleTerminalOutput('ssh-1', 'ssh root@10.1.64.1\r\n');
+  controller.handleTerminalOutput('ssh-1', '[root@10.1.64.1 ~]# ');
+  assert.deepEqual(changes, []);
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  // One trailing scan over the settled tail sees the nested prompt.
+  assert.deepEqual(changes, [['ssh-1', '10.1.64.1']]);
+});
+
+test('prompt host controller drops a pending scan when the session is forgotten', async () => {
+  const changes: Change[] = [];
+  const controller = createPromptHostnameSessionSignalController({
+    getSession,
+    onChange: (sessionId, hostname) => changes.push([sessionId, hostname]),
+    analysisDelayMs: 20,
+  });
+
+  controller.handleTerminalOutput('ssh-1', '\r\n[root@10.1.64.1 ~]# ');
+  controller.forgetSession('ssh-1');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.deepEqual(changes, []);
+});

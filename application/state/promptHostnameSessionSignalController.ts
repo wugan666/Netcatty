@@ -13,6 +13,15 @@ type PromptHostnameSessionSignalOptions = {
     options: { fromJumpServer: boolean },
   ) => void;
   maxTailChars?: number;
+  /**
+   * Coalesce the prompt scan: when set, a session's tail is analysed at most
+   * once per window (trailing edge) instead of on every output chunk. The scan
+   * strips control sequences and splits an up-to-8KB tail, so running it per
+   * chunk for every streaming session costs more than rendering the output.
+   * A shell prompt only matters once output settles, so nothing is lost.
+   * Omitted (default) keeps the synchronous per-chunk behavior.
+   */
+  analysisDelayMs?: number;
 };
 
 const DEFAULT_MAX_TAIL_CHARS = 8_192;
@@ -25,13 +34,21 @@ export function createPromptHostnameSessionSignalController({
   getSession,
   onChange,
   maxTailChars = DEFAULT_MAX_TAIL_CHARS,
+  analysisDelayMs,
 }: PromptHostnameSessionSignalOptions) {
   const tails = new Map<string, string>();
   const published = new Map<string, string>();
   const jumpServerSessions = new Set<string>();
   const tailLimit = Math.max(256, maxTailChars);
 
+  const pendingAnalysis = new Map<string, ReturnType<typeof setTimeout>>();
+
   const forgetSession = (sessionId: string): void => {
+    const timer = pendingAnalysis.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      pendingAnalysis.delete(sessionId);
+    }
     tails.delete(sessionId);
     published.delete(sessionId);
     jumpServerSessions.delete(sessionId);
@@ -55,15 +72,42 @@ export function createPromptHostnameSessionSignalController({
       if ((session.protocol ?? 'ssh') !== 'ssh') return;
 
       const combined = `${tails.get(sessionId) ?? ''}${chunk}`;
-      const tail = combined.slice(-tailLimit);
-      tails.set(sessionId, tail);
-      if (
-        !jumpServerSessions.has(sessionId)
-        && combined.includes('>')
-        && combined.split(/\r\n|\r|\n/u).some((line) => isJumpServerMenuLine(line))
-      ) {
-        jumpServerSessions.add(sessionId);
+      const previousTail = tails.get(sessionId) ?? '';
+      tails.set(sessionId, combined.slice(-tailLimit));
+      // Jump-server menu lines are matched as output arrives (a deferred scan
+      // of the capped tail could miss one), but only over text not seen as a
+      // complete line yet: the unfinished last line plus this chunk.
+      if (!jumpServerSessions.has(sessionId) && chunk.length > 0) {
+        const lastBreak = Math.max(previousTail.lastIndexOf('\n'), previousTail.lastIndexOf('\r'));
+        const unscanned = `${previousTail.slice(lastBreak + 1)}${chunk}`;
+        if (
+          unscanned.includes('>')
+          && unscanned.split(/\r\n|\r|\n/u).some((line) => isJumpServerMenuLine(line))
+        ) {
+          jumpServerSessions.add(sessionId);
+        }
       }
+
+      if (analysisDelayMs === undefined || analysisDelayMs <= 0) {
+        analyze(sessionId);
+        return;
+      }
+      if (pendingAnalysis.has(sessionId)) return;
+      pendingAnalysis.set(sessionId, setTimeout(() => {
+        pendingAnalysis.delete(sessionId);
+        analyze(sessionId);
+      }, analysisDelayMs));
+    },
+  };
+
+  function analyze(sessionId: string): void {
+      const session = getSession(sessionId);
+      if (!session) {
+        forgetSession(sessionId);
+        return;
+      }
+      const tail = tails.get(sessionId);
+      if (tail === undefined) return;
 
       const detected = extractTerminalPromptHostname(tail);
       if (!detected) {
@@ -84,6 +128,5 @@ export function createPromptHostnameSessionSignalController({
       if (published.get(sessionId) === publishKey) return;
       published.set(sessionId, publishKey);
       onChange(sessionId, detected, { fromJumpServer });
-    },
-  };
+  }
 }
