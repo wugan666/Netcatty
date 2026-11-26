@@ -1983,27 +1983,27 @@ test("writeSessionData does not wipe scrollback for delayed sync clears after re
   assert.equal(output.includes("\x1b[H\x1b[2Jframe"), true, output);
 });
 
-test("writeSessionData always uses ledger recording regardless of gutter toggle", () => {
+test("writeSessionData records the timestamp ledger only while the gutter is shown", () => {
   const { term, writes, markerLines } = createFakeTerm();
   const ctx = createContext(false, { showLineTimestamps: false });
 
   writeSessionData(ctx as never, term, "before\r\n");
-  // Per-second sparse reflow anchors (not per-line markers).
-  assert.equal(markerLines.length, 1);
+  // Gutter off: no markers, so background sessions pay nothing for it.
+  assert.equal(markerLines.length, 0);
 
   ctx.host = { showLineTimestamps: true };
   ctx.hostRef.current = ctx.host;
   writeSessionData(ctx as never, term, "enabled\r\n");
-  // Same wall-clock second in real runs may still be one stamp; here two writes
-  // share one second unless Date.now advances — allow ≤2 sparse anchors total.
-  assert.ok(markerLines.length <= 2, `expected sparse anchors, got ${markerLines.length}`);
+  // Gutter on: one sparse anchor for this wall-clock second.
+  assert.equal(markerLines.length, 1);
 
   ctx.host = { showLineTimestamps: false };
   ctx.hostRef.current = ctx.host;
   writeSessionData(ctx as never, term, "disabled");
+  assert.equal(markerLines.length, 1);
 
   assert.equal(writes.join(""), "before\r\nenabled\r\ndisabled");
-  // Ledger still has stamps for paint when gutter is shown.
+  // The stamp recorded while the gutter was on is still there to paint.
   assert.ok(getVisibleTerminalLineTimestampRows(term).length >= 1);
 });
 

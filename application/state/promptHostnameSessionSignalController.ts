@@ -8,6 +8,15 @@ type PromptHostnameSessionSignalOptions = {
   getSession: (sessionId: string) => Pick<TerminalSession, 'protocol' | 'hostname'> | undefined;
   onChange: (sessionId: string, hostname: string | null) => void;
   maxTailChars?: number;
+  /**
+   * Coalesce the prompt scan: when set, a session's tail is analysed at most
+   * once per window (trailing edge) instead of on every output chunk. The scan
+   * strips control sequences and splits an up-to-8KB tail, so running it per
+   * chunk for every streaming session costs more than rendering the output.
+   * A shell prompt only matters once output settles, so nothing is lost.
+   * Omitted (default) keeps the synchronous per-chunk behavior.
+   */
+  analysisDelayMs?: number;
 };
 
 const DEFAULT_MAX_TAIL_CHARS = 8_192;
@@ -20,13 +29,21 @@ export function createPromptHostnameSessionSignalController({
   getSession,
   onChange,
   maxTailChars = DEFAULT_MAX_TAIL_CHARS,
+  analysisDelayMs,
 }: PromptHostnameSessionSignalOptions) {
   const tails = new Map<string, string>();
   const baselines = new Map<string, string>();
   const published = new Map<string, string>();
   const tailLimit = Math.max(256, maxTailChars);
 
+  const pendingAnalysis = new Map<string, ReturnType<typeof setTimeout>>();
+
   const forgetSession = (sessionId: string): void => {
+    const timer = pendingAnalysis.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      pendingAnalysis.delete(sessionId);
+    }
     tails.delete(sessionId);
     baselines.delete(sessionId);
     published.delete(sessionId);
@@ -50,8 +67,28 @@ export function createPromptHostnameSessionSignalController({
       if ((session.protocol ?? 'ssh') !== 'ssh') return;
 
       const combined = `${tails.get(sessionId) ?? ''}${chunk}`;
-      const tail = combined.slice(-tailLimit);
-      tails.set(sessionId, tail);
+      tails.set(sessionId, combined.slice(-tailLimit));
+
+      if (analysisDelayMs === undefined || analysisDelayMs <= 0) {
+        analyze(sessionId);
+        return;
+      }
+      if (pendingAnalysis.has(sessionId)) return;
+      pendingAnalysis.set(sessionId, setTimeout(() => {
+        pendingAnalysis.delete(sessionId);
+        analyze(sessionId);
+      }, analysisDelayMs));
+    },
+  };
+
+  function analyze(sessionId: string): void {
+      const session = getSession(sessionId);
+      if (!session) {
+        forgetSession(sessionId);
+        return;
+      }
+      const tail = tails.get(sessionId);
+      if (tail === undefined) return;
 
       const detected = extractTerminalPromptHostname(tail);
       if (!detected) {
@@ -81,6 +118,5 @@ export function createPromptHostnameSessionSignalController({
       if (published.get(sessionId) === detectedKey) return;
       published.set(sessionId, detectedKey);
       onChange(sessionId, detected);
-    },
-  };
+  }
 }

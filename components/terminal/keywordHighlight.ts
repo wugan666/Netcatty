@@ -752,6 +752,11 @@ export class KeywordHighlighter implements IDisposable {
   private shouldBypassWrite(data: string | Uint8Array): boolean {
     if (this.options.shouldBypassHighlight?.()) return true;
     if (typeof data !== "string") return true;
+    // A hidden pane has nobody to read its colors. Per-write recoloring there
+    // costs as much as the parse itself once many sessions stream at the same
+    // time, so take the deferred path: the rows are marked for catch-up and
+    // the viewport is recolored when the pane is shown.
+    if (isTerminalOutputInBackground(this.term)) return true;
     if (shouldDegradeTerminalKeywordHighlight(this.term, data)) return true;
     return this.countNewlines(data) >= BULK_WRITE_LINE_BREAKS;
   }

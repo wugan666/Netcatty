@@ -637,7 +637,7 @@ test("formats timestamp labels without terminal escape codes", () => {
 });
 
 
-test("gutter off records a per-second ledger with a sparse reflow anchor", () => {
+test("gutter off skips ledger recording entirely", () => {
   const { term, writes, markerLines } = createFakeTerm();
   const t0 = new Date(2026, 5, 6, 12, 0, 0);
   writeTerminalDataWithLineTimestamps(term as never, "before\r\nnext\r\nthird", () => {}, {
@@ -646,12 +646,13 @@ test("gutter off records a per-second ledger with a sparse reflow anchor", () =>
   });
 
   assert.equal(writes.join(""), "before\r\nnext\r\nthird");
-  // One wall-clock second → one sparse anchor (not per-line markers).
-  assert.equal(markerLines.length, 1);
-  assert.equal(getTerminalLineTimestampLedgerCount(term as never), 1);
+  // No markers and no ledger entries: a hidden gutter must not cost anything
+  // on the write path (markers are updated on every scrollback trim).
+  assert.equal(markerLines.length, 0);
+  assert.equal(getTerminalLineTimestampLedgerCount(term as never), 0);
 });
 
-test("ledger keeps one stamp per wall-clock second whether gutter is on or off", () => {
+test("ledger records only while the gutter is on, one stamp per wall-clock second", () => {
   const { term, markerLines } = createFakeTerm();
   writeTerminalDataWithLineTimestamps(term as never, "a\r\nb\r\n", () => {}, {
     enabled: true,
@@ -661,8 +662,14 @@ test("ledger keeps one stamp per wall-clock second whether gutter is on or off",
     enabled: false,
     timestampDate: new Date(2026, 5, 6, 12, 0, 1),
   });
+  assert.equal(markerLines.length, 1);
+  assert.equal(getTerminalLineTimestampLedgerCount(term as never), 1);
 
-  // Sparse anchors only: one registerMarker per stamped second.
+  // Turning the gutter back on resumes stamping from that moment.
+  writeTerminalDataWithLineTimestamps(term as never, "e\r\nf\r\n", () => {}, {
+    enabled: true,
+    timestampDate: new Date(2026, 5, 6, 12, 0, 2),
+  });
   assert.equal(markerLines.length, 2);
   assert.equal(getTerminalLineTimestampLedgerCount(term as never), 2);
 });

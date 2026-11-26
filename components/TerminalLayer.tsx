@@ -436,6 +436,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     () => createPromptHostnameSessionSignalController({
       getSession: (sessionId) => sessionsRef.current.find((session) => session.id === sessionId),
       onChange: (sessionId, hostname) => onUpdateSessionPromptHost?.(sessionId, hostname),
+      analysisDelayMs: 200,
     }),
     [onUpdateSessionPromptHost],
   );
