@@ -54,6 +54,7 @@ import {
   repaintTerminalAfterReveal,
 } from './runtime/terminalUnfocusedRepaint';
 import { setTerminalOutputPressureVisibility } from './runtime/terminalOutputPressure';
+import { canRevealWithoutAtlasRebuild, getWebglContextEpoch } from './runtime/webglContextEpoch';
 import {
   forceXTermFontRemeasure,
   type XTermFontRemeasureTarget,
@@ -258,6 +259,7 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
   const lastWebglRecoveryLayoutKeyRef = useRef<string | null>(null);
   const terminalBootCloseGenerationRef = useRef(0);
   const hiddenAtRef = useRef<number | null>(null);
+  const hiddenWebglEpochRef = useRef<number | null>(null);
   const wasVisibleRef = useRef(isVisible);
 
 
@@ -1462,8 +1464,14 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
     // Do not claim recovery until there is a runtime for the delayed pass to use.
     if (!termRef.current || !xtermRuntimeRef.current) return;
 
+    // Cheap reveal: short hides, and longer ones during which no pane created
+    // or lost a WebGL context (the only thing the atlas rebuild guards against).
     if (
-      getHiddenDurationMs() < CSS_ONLY_TAB_REVEAL_MAX_HIDDEN_MS
+      canRevealWithoutAtlasRebuild({
+        hiddenDurationMs: getHiddenDurationMs(),
+        shortHideMs: CSS_ONLY_TAB_REVEAL_MAX_HIDDEN_MS,
+        epochAtHide: hiddenWebglEpochRef.current,
+      })
       && currentContainerSizeAlreadyFit()
     ) {
       lastWebglRecoveryLayoutKeyRef.current = paneLayoutKey;
@@ -1540,6 +1548,7 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
     lastWebglRecoveryLayoutKeyRef.current = null;
     if (hiddenAtRef.current === null) {
       hiddenAtRef.current = Date.now();
+      hiddenWebglEpochRef.current = getWebglContextEpoch();
     }
   }, [isVisible]);
 
@@ -1802,7 +1811,10 @@ export function useTerminalEffects(ctx: TerminalEffectsContext) {
       );
     };
     const timer = setTimeout(() => {
-      safeFit({ force: true, requireVisible: true });
+      // The search bar floats over the terminal, so toggling it no longer
+      // changes the container size. An unforced fit is a no-op then; a forced
+      // one would clear the glyph atlas and repaint every row for nothing.
+      safeFit({ requireVisible: true });
       settleClosedSearch();
       raf = requestAnimationFrame(() => {
         raf = 0;

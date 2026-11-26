@@ -1,4 +1,5 @@
 import type { WebglContextBudget, WebglContextBudgetMember } from "./webglContextBudget";
+import { noteWebglContextChurn } from "./webglContextEpoch";
 
 export interface WebglRendererAddon {
   onContextLoss(callback: () => void): unknown;
@@ -101,7 +102,9 @@ export function createWebglRendererController<TAddon extends WebglRendererAddon>
     try {
       nextAddon = options.createAddon();
       const ownedAddon = nextAddon;
+      noteWebglContextChurn();
       ownedAddon.onContextLoss(() => {
+        noteWebglContextChurn();
         if (addon !== ownedAddon || disposed) return;
         readVisibility();
         const lostWhileHidden = hiddenSince !== null;

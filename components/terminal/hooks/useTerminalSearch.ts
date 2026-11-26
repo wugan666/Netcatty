@@ -436,13 +436,17 @@ export const shouldResetOnSharedSearchClose = (localSearchTerm: string): boolean
 export const useTerminalSearch = ({
   searchAddonRef,
   termRef,
+  isVisible = true,
 }: {
   searchAddonRef: RefObject<SearchAddon | null>;
   termRef: RefObject<XTerm | null>;
+  /** Hidden panes pick the shared search-open state up when they are shown. */
+  isVisible?: boolean;
 }) => {
   const [isSearchOpen, setIsSearchOpen] = useStoredBoolean(
     STORAGE_KEY_TERMINAL_SEARCH_OPEN,
     false,
+    { deferExternalUpdates: !isVisible },
   );
   const [searchMatchCount, setSearchMatchCount] = useState<SearchMatchCount>(null);
   // Bumped each time the search hotkey fires. The SearchBar watches this token

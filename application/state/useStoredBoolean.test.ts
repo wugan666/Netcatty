@@ -101,3 +101,85 @@ test("functional updates stay pure when another consumer shares the storage key"
     else delete (globalThis as typeof globalThis & { CustomEvent?: unknown }).CustomEvent;
   }
 });
+
+test("a deferred consumer skips shared toggles until it is undeferred", async () => {
+  const KEY = "netcatty:test:stored-boolean-deferred";
+  const values = new Map<string, string>([[KEY, "false"]]);
+  const fakeStorage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  };
+  const fakeWindow = new EventTarget();
+  const globals = globalThis as typeof globalThis & {
+    IS_REACT_ACT_ENVIRONMENT?: boolean;
+    localStorage?: typeof fakeStorage;
+    window?: typeof fakeWindow;
+  };
+  const saved = ["localStorage", "window", "dispatchEvent", "CustomEvent"].map(
+    (name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+  );
+  const previousActEnvironment = globals.IS_REACT_ACT_ENVIRONMENT;
+  Object.defineProperty(globalThis, "localStorage", { value: fakeStorage, configurable: true });
+  Object.defineProperty(globalThis, "window", { value: fakeWindow, configurable: true });
+  Object.defineProperty(globalThis, "dispatchEvent", {
+    value: fakeWindow.dispatchEvent.bind(fakeWindow),
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "CustomEvent", {
+    value: class TestCustomEvent<T> extends Event {
+      readonly detail: T;
+      constructor(type: string, init?: CustomEventInit<T>) {
+        super(type);
+        this.detail = init?.detail as T;
+      }
+    },
+    configurable: true,
+  });
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+
+  let renderer: ReactTestRenderer | null = null;
+  let toggle: (() => void) | null = null;
+  let hiddenRenders = 0;
+  let hiddenValue = false;
+
+  const Visible = () => {
+    const [, setValue] = useStoredBoolean(KEY);
+    toggle = () => setValue((previous) => !previous);
+    return null;
+  };
+  const Pane = ({ hidden }: { hidden: boolean }) => {
+    [hiddenValue] = useStoredBoolean(KEY, false, { deferExternalUpdates: hidden });
+    hiddenRenders += 1;
+    return null;
+  };
+  const tree = (hidden: boolean) => React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(Visible),
+    React.createElement(Pane, { hidden }),
+  );
+
+  try {
+    await act(async () => { renderer = create(tree(true)); });
+    const rendersBeforeToggle = hiddenRenders;
+    await act(async () => { toggle?.(); });
+    assert.equal(hiddenRenders, rendersBeforeToggle, "hidden pane must not re-render");
+    assert.equal(hiddenValue, false);
+
+    hiddenRenders = 0;
+    await act(async () => { renderer?.update(tree(false)); });
+    assert.equal(hiddenValue, true, "pane catches up when shown");
+
+    // Shown panes follow toggles immediately again.
+    await act(async () => { toggle?.(); });
+    assert.equal(hiddenValue, false);
+  } finally {
+    await act(async () => { renderer?.unmount(); });
+    globals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else delete (globalThis as Record<string, unknown>)[name];
+    }
+  }
+});

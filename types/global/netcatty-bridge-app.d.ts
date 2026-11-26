@@ -1,6 +1,8 @@
 
 declare global {
   interface NetcattyBridge {
+    /** Chromium's per-renderer WebGL context cap when the app raised it, else null (stock cap of 16). */
+    getWebglContextLimit?(): number | null;
     // Auto-update
     checkForUpdate?(): Promise<{
       available: boolean;

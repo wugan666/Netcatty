@@ -14,14 +14,24 @@ function themeFingerprint(theme: TerminalTheme): string {
   return `${theme.id}:${theme.colors.background}:${theme.colors.foreground}:${theme.colors.cursor}`;
 }
 
+// What each terminal last received. Tab switches and focus changes re-run the
+// theme sync with identical colors; assigning `options.theme` anyway makes
+// xterm rewrite its scrollbar <style> element, and editing any stylesheet
+// invalidates style for the whole document — a full recalc on every switch.
+const appliedThemeByTerminal = new WeakMap<Terminal, string>();
+
 function applyThemeToTerminal(term: Terminal, theme: TerminalTheme): void {
-  term.options.theme = {
+  const xtermTheme = {
     ...theme.colors,
     selectionBackground: theme.colors.selection,
     scrollbarSliderBackground: theme.colors.foreground + '33',
     scrollbarSliderHoverBackground: theme.colors.foreground + '66',
     scrollbarSliderActiveBackground: theme.colors.foreground + '80',
   };
+  const serialized = JSON.stringify(xtermTheme);
+  if (appliedThemeByTerminal.get(term) === serialized) return;
+  appliedThemeByTerminal.set(term, serialized);
+  term.options.theme = xtermTheme;
   forceSyncRenderAfterResize(term);
 }
 

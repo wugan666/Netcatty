@@ -390,10 +390,16 @@ test("hidden host information bar gives its vertical space back to the terminal"
   );
 });
 
-test("terminal search keeps enough space when host information is hidden", () => {
+test("terminal search floats over the terminal without moving its content", () => {
+  // Overlays below the bar still clear it (toolbarOffset), but the terminal
+  // itself keeps its position so opening search never resizes the PTY.
   assert.deepEqual(
     resolveTerminalTopOffsets({ showHostInfoBar: false, isSearchOpen: true }),
-    { toolbarOffset: 64, contentTop: "68px" },
+    { toolbarOffset: 64, contentTop: "4px" },
+  );
+  assert.deepEqual(
+    resolveTerminalTopOffsets({ showHostInfoBar: true, isSearchOpen: true }),
+    { toolbarOffset: 64, contentTop: "34px" },
   );
 });
 
