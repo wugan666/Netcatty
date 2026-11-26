@@ -180,6 +180,17 @@ test("released and forgotten panes free their slot", () => {
   assert.equal(budget.getActiveCount(), 1);
 });
 
+test("the budget grows only when the browser reports a raised context cap", async () => {
+  const { MAX_ACTIVE_WEBGL_CONTEXTS, resolveMaxActiveWebglContexts } = await import("./webglContextBudget");
+  assert.equal(resolveMaxActiveWebglContexts(null), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(undefined), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(16), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(Number.NaN), MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(resolveMaxActiveWebglContexts(64), 56);
+  // A barely raised cap never shrinks the budget below the default.
+  assert.equal(resolveMaxActiveWebglContexts(18), MAX_ACTIVE_WEBGL_CONTEXTS);
+});
+
 test("hidden budget keeps 1 MRU hidden pane warm and releases older hidden panes after idle grace", () => {
   const clock = createClock();
   const budget = createWebglContextBudget({
@@ -219,4 +230,14 @@ test("hidden budget keeps 1 MRU hidden pane warm and releases older hidden panes
   assert.equal(b.releases, 0);
   assert.equal(c.releases, 0);
   assert.equal(budget.getActiveCount(), 2);
+});
+
+test("the shared budget caps hidden contexts only under the stock browser cap", async () => {
+  const { MAX_ACTIVE_WEBGL_CONTEXTS, MAX_HIDDEN_WEBGL_CONTEXTS, resolveSharedWebglContextBudgetOptions } = await import("./webglContextBudget");
+  const stock = resolveSharedWebglContextBudgetOptions(null);
+  assert.equal(stock.maxActiveContexts, MAX_ACTIVE_WEBGL_CONTEXTS);
+  assert.equal(stock.maxHiddenContexts, MAX_HIDDEN_WEBGL_CONTEXTS);
+  const raised = resolveSharedWebglContextBudgetOptions(64);
+  assert.equal(raised.maxActiveContexts, 56);
+  assert.equal(raised.maxHiddenContexts, undefined);
 });

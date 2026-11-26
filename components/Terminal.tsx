@@ -1047,9 +1047,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [reconnectNoticeMessage, setReconnectNoticeMessage] = useState<string | null>(null);
 
   // pendingUploadEntries removed - drag-drop uploads now handled by SftpSidePanel
+  // Shared across every terminal; hidden panes catch up when they are shown
+  // instead of all re-rendering on each toggle.
   const [isComposeBarOpen, setIsComposeBarOpen] = useStoredBoolean(
     STORAGE_KEY_TERMINAL_COMPOSE_BAR_OPEN,
     false,
+    { deferExternalUpdates: !isVisible },
   );
   const terminalEncodingStorageKey = createTerminalEncodingStorageKey(
     STORAGE_KEY_TERMINAL_ENCODING_BY_HOST_PREFIX,
@@ -1080,7 +1083,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   // that the UI's two-value state can't represent.
   const userPickedEncodingRef = useRef(false);
 
-  const terminalSearch = useTerminalSearch({ searchAddonRef, termRef });
+  const terminalSearch = useTerminalSearch({ searchAddonRef, termRef, isVisible });
   const {
     isSearchOpen,
     searchMatchCount,

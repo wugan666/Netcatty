@@ -17,6 +17,60 @@
 
 export const MAX_ACTIVE_WEBGL_CONTEXTS = 12;
 
+/** Chromium's stock per-renderer WebGL context cap. */
+const STOCK_BROWSER_WEBGL_CONTEXT_LIMIT = 16;
+/** Contexts left for non-terminal canvases (log viewer, previews) and tab-flip overshoot. */
+const WEBGL_CONTEXT_HEADROOM = 8;
+
+/**
+ * Size the terminal budget from the browser's real cap. The desktop app
+ * raises that cap (see electron/main.cjs) and reports it via the preload, so
+ * every tab can keep its GPU renderer and switching never rebuilds one.
+ * Without a reported raise the conservative default stands.
+ */
+export function resolveMaxActiveWebglContexts(browserLimit: number | null | undefined): number {
+  if (
+    typeof browserLimit !== 'number'
+    || !Number.isInteger(browserLimit)
+    || browserLimit <= STOCK_BROWSER_WEBGL_CONTEXT_LIMIT
+  ) {
+    return MAX_ACTIVE_WEBGL_CONTEXTS;
+  }
+  return Math.max(MAX_ACTIVE_WEBGL_CONTEXTS, browserLimit - WEBGL_CONTEXT_HEADROOM);
+}
+
+/**
+ * Options for the shared budget. With the stock browser cap, only the most
+ * recently hidden pane stays warm and older hidden panes give their GPU
+ * memory back. When the app raised the cap, the point of the raise is that
+ * every tab keeps its renderer, so hidden panes are released only when the
+ * (larger) total budget overflows.
+ */
+export function resolveSharedWebglContextBudgetOptions(browserLimit: number | null | undefined): {
+  maxActiveContexts: number;
+  minHiddenMs: number;
+  maxHiddenContexts?: number;
+  hiddenIdleReleaseMs: number;
+} {
+  const maxActiveContexts = resolveMaxActiveWebglContexts(browserLimit);
+  const raised = maxActiveContexts > MAX_ACTIVE_WEBGL_CONTEXTS;
+  return {
+    maxActiveContexts,
+    minHiddenMs: MIN_HIDDEN_MS_BEFORE_WEBGL_RELEASE,
+    ...(raised ? {} : { maxHiddenContexts: MAX_HIDDEN_WEBGL_CONTEXTS }),
+    hiddenIdleReleaseMs: HIDDEN_WEBGL_IDLE_RELEASE_MS,
+  };
+}
+
+const readBrowserWebglContextLimit = (): number | null => {
+  try {
+    const bridge = (globalThis as { netcatty?: { getWebglContextLimit?: () => number | null } }).netcatty;
+    return bridge?.getWebglContextLimit?.() ?? null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Same window as the CSS-only tab reveal in useTerminalEffects, so quickly
  * flipping between tabs never tears down and rebuilds a renderer.
@@ -174,10 +228,7 @@ let sharedBudget: WebglContextBudget | null = null;
 /** The budget shared by every terminal in this renderer process. */
 export function getSharedWebglContextBudget(): WebglContextBudget {
   sharedBudget ??= createWebglContextBudget({
-    maxActiveContexts: MAX_ACTIVE_WEBGL_CONTEXTS,
-    minHiddenMs: MIN_HIDDEN_MS_BEFORE_WEBGL_RELEASE,
-    maxHiddenContexts: MAX_HIDDEN_WEBGL_CONTEXTS,
-    hiddenIdleReleaseMs: HIDDEN_WEBGL_IDLE_RELEASE_MS,
+    ...resolveSharedWebglContextBudgetOptions(readBrowserWebglContextLimit()),
   });
   return sharedBudget;
 }
