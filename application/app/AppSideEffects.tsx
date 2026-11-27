@@ -105,7 +105,8 @@ import { shouldOpenLocalTerminalOnStartup, resolveStartupLandingSetting } from '
 import { createOpenTerminalQueue } from './openTerminalQueue';
 import { useAppStartupEffects } from './useAppStartupEffects';
 import { OPEN_SESSION_COMMAND_TAB_EVENT, type OpenSessionCommandTabDetail } from '../state/sessionCommandTab';
-import { handleTrayJumpToSessionImpl, handleTrayTogglePortForwardImpl, handleTrayPanelConnectImpl, handleTrayPanelConnectRequestImpl, flushQueuedTrayPanelConnectHostsImpl, handleGlobalHotkeyKeyDownImpl, handleEscapeKeyDownImpl, handleKeyboardInteractiveSubmitImpl, handleKeyboardInteractiveCancelImpl, handlePassphraseSubmitImpl, handlePassphraseCancelImpl, handlePassphraseSkipImpl, handleFidoPromptSubmitImpl, handleFidoPromptCancelImpl, createLocalTerminalWithCurrentShellImpl, splitSessionWithCurrentShellImpl, copySessionWithCurrentShellImpl, duplicateSessionWithCurrentShellImpl, copyWorkspaceWithCurrentShellImpl, copySessionToNewWindowWithCurrentShellImpl, moveSessionToNewWindowImpl, confirmIfBusyLocalTerminalImpl, closeTabsBatchImpl, executeHotkeyActionImpl, handleCreateLocalTerminalImpl, handleConnectToHostImpl, handleTerminalDataCaptureImpl, startRestoredSessionConnectionLogImpl, hasMultipleProtocolsImpl, handleHostConnectWithProtocolCheckImpl, handleProtocolSelectImpl, handleRootContextMenuImpl, markForwardedNativeShortcutEvent } from './AppHandlers';
+import { handleTrayJumpToSessionImpl, handleTrayTogglePortForwardImpl, handleTrayPanelConnectImpl, handleTrayPanelConnectRequestImpl, flushQueuedTrayPanelConnectHostsImpl, handleGlobalHotkeyKeyDownImpl, handleEscapeKeyDownImpl, handleKeyboardInteractiveSubmitImpl, handleKeyboardInteractiveCancelImpl, handlePassphraseSubmitImpl, handlePassphraseCancelImpl, handlePassphraseSkipImpl, handleFidoPromptSubmitImpl, handleFidoPromptCancelImpl, createLocalTerminalWithCurrentShellImpl, splitSessionWithCurrentShellImpl, copySessionWithCurrentShellImpl, duplicateSessionWithCurrentShellImpl, copyWorkspaceWithCurrentShellImpl, copySessionToNewWindowWithCurrentShellImpl, moveSessionToNewWindowImpl, confirmIfBusyLocalTerminalImpl, closeTabsBatchImpl, executeHotkeyActionImpl, handleCreateLocalTerminalImpl, handleConnectToHostImpl, handleConnectRemoteDesktopImpl, handleOpenSystemRemoteDesktopImpl, handleTerminalDataCaptureImpl, startRestoredSessionConnectionLogImpl, hasMultipleProtocolsImpl, handleHostConnectWithProtocolCheckImpl, handleProtocolSelectImpl, handleRootContextMenuImpl, markForwardedNativeShortcutEvent } from './AppHandlers';
+import type { RemoteDesktopProtocol } from '../../domain/remoteDesktop';
 
 type OpenSessionInNewWindowPayload = {
   title?: string;
@@ -261,6 +262,7 @@ export function AppSideEffects() {
     createLocalTerminal,
     createSerialSession,
     connectToHost,
+    connectToHostRemoteDesktop,
     appendHostToWorkspaceConfirmed,
     closeSession,
     closeSessions,
@@ -1518,6 +1520,38 @@ export function AppSideEffects() {
     }), connectionHost, hidden);
   }, [addConnectionLog, appendHostToWorkspaceConfirmed, connectToHost, resolveEffectiveHost, identities, keys, discoveredShells]);
 
+  const handleConnectRemoteDesktop = useCallback((
+    host: Host,
+    protocol: RemoteDesktopProtocol,
+    options?: { splitFromSessionId?: string },
+  ) => {
+    return handleConnectRemoteDesktopImpl(() => ({
+      addConnectionLog,
+      connectToHostRemoteDesktop,
+      identities,
+      resolveEffectiveHost,
+      systemInfoRef,
+    }), host, protocol, options);
+  }, [addConnectionLog, connectToHostRemoteDesktop, identities, resolveEffectiveHost]);
+
+  const handleOpenSystemRemoteDesktop = useCallback((
+    host: Host,
+    protocol: RemoteDesktopProtocol,
+    rawRdpContent?: string,
+  ) => {
+    void handleOpenSystemRemoteDesktopImpl(() => ({
+      groupConfigs,
+      hosts,
+      identities,
+      keys,
+      knownHosts: knownHostsRef.current,
+      netcattyBridge,
+      proxyProfiles,
+      resolveEffectiveHost,
+      toast,
+    }), host, protocol, rawRdpContent);
+  }, [groupConfigs, hosts, identities, keys, proxyProfiles, resolveEffectiveHost]);
+
   const handleConnectToHostWithTabName = useCallback((host: Host, tabName?: string) => {
     const sessionId = handleConnectToHost(host);
     if (sessionId && tabName) {
@@ -1769,6 +1803,33 @@ export function AppSideEffects() {
         toast.warning(t('deepLink.jms.invalid'));
       }
       return;
+    }
+    const targetProtocol = result.target.protocol.toLowerCase();
+    const jumpServerRdpLaunchMode = settings.jumpServerRdpLaunchMode ?? 'builtin';
+    if (
+      targetProtocol === 'rdp'
+      && jumpServerRdpLaunchMode === 'system'
+      && result.target.rawRdpFileContent
+    ) {
+      const rdBridge = netcattyBridge.get()?.remoteDesktop;
+      if (rdBridge?.openSystemClient) {
+        void rdBridge.openSystemClient({
+          protocol: 'rdp',
+          hostname: result.target.hostname,
+          port: result.target.port,
+          username: result.target.username || undefined,
+          domain: result.target.domain || undefined,
+          label: result.target.label,
+          rdpContent: result.target.rawRdpFileContent,
+        }).then((res) => {
+          if (!res?.ok) {
+            toast.error(res?.error || 'Failed to launch system RDP client');
+          }
+        }).catch((err) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to launch system RDP client');
+        });
+        return;
+      }
     }
     const ephemeralHost = buildJmsDeepLinkEphemeralHost(result.target, {
       id: crypto.randomUUID(),
@@ -2027,7 +2088,26 @@ export function AppSideEffects() {
   const handleHostConnectWithProtocolCheck = useCallback((host: Host) => { return handleHostConnectWithProtocolCheckImpl(() => ({ handleConnectToHost, hasMultipleProtocols, host, resolveEffectiveHost, setIsQuickSwitcherOpen, setProtocolSelectHost }), host); }, [hasMultipleProtocols, handleConnectToHost, resolveEffectiveHost]);
 
   // Handle protocol selection from dialog
-  const handleProtocolSelect = useCallback((protocol: HostProtocol, port: number) => { return handleProtocolSelectImpl(() => ({ handleConnectToHost, port, protocol, protocolSelectHost, setProtocolSelectHost }), protocol, port); }, [protocolSelectHost, handleConnectToHost]);
+  const handleProtocolSelect = useCallback(
+    (protocol: HostProtocol, port: number, rememberDefault?: boolean) => {
+      return handleProtocolSelectImpl(
+        () => ({
+          handleConnectToHost,
+          handleConnectRemoteDesktop,
+          port,
+          protocol,
+          protocolSelectHost,
+          rememberDefault,
+          setProtocolSelectHost,
+          updateHosts,
+        }),
+        protocol,
+        port,
+        rememberDefault,
+      );
+    },
+    [protocolSelectHost, handleConnectToHost, handleConnectRemoteDesktop, updateHosts],
+  );
 
   const handleOpenQuickSwitcher = useCallback(() => {
     setIsQuickSwitcherOpen(true);
@@ -2120,6 +2200,8 @@ export function AppSideEffects() {
       createWorkspaceWithHosts: createWorkspaceWithEffectiveHosts,
       handleConnectSerial,
       handleConnectToHost,
+      handleConnectRemoteDesktop,
+      handleOpenSystemRemoteDesktop,
       handleCreateLocalTerminal,
       handleHotkeyAction,
       handleSessionStatusChange,
@@ -2199,6 +2281,8 @@ export function AppSideEffects() {
     createWorkspaceWithEffectiveHosts,
     handleConnectSerial,
     handleConnectToHost,
+    handleConnectRemoteDesktop,
+    handleOpenSystemRemoteDesktop,
     handleCreateLocalTerminal,
     handleHotkeyAction,
     handleSessionStatusChange,
