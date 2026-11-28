@@ -1,12 +1,17 @@
 import type { TerminalSession } from '../../domain/models';
 import {
   extractTerminalPromptHostname,
+  isJumpServerMenuLine,
   isJumpServerMenuPrompt,
 } from '../../domain/terminalPromptSecurity';
 
 type PromptHostnameSessionSignalOptions = {
   getSession: (sessionId: string) => Pick<TerminalSession, 'protocol'> | undefined;
-  onChange: (sessionId: string, hostname: string | null) => void;
+  onChange: (
+    sessionId: string,
+    hostname: string | null,
+    options: { fromJumpServer: boolean },
+  ) => void;
   maxTailChars?: number;
   /**
    * Coalesce the prompt scan: when set, a session's tail is analysed at most
@@ -33,6 +38,7 @@ export function createPromptHostnameSessionSignalController({
 }: PromptHostnameSessionSignalOptions) {
   const tails = new Map<string, string>();
   const published = new Map<string, string>();
+  const jumpServerSessions = new Set<string>();
   const tailLimit = Math.max(256, maxTailChars);
 
   const pendingAnalysis = new Map<string, ReturnType<typeof setTimeout>>();
@@ -45,12 +51,13 @@ export function createPromptHostnameSessionSignalController({
     }
     tails.delete(sessionId);
     published.delete(sessionId);
+    jumpServerSessions.delete(sessionId);
   };
 
   return {
     forgetSession,
     pruneSessions(validSessionIds: ReadonlySet<string>): void {
-      for (const sessionId of [...tails.keys(), ...published.keys()]) {
+      for (const sessionId of [...tails.keys(), ...published.keys(), ...jumpServerSessions]) {
         if (!validSessionIds.has(sessionId)) {
           forgetSession(sessionId);
         }
@@ -65,7 +72,21 @@ export function createPromptHostnameSessionSignalController({
       if ((session.protocol ?? 'ssh') !== 'ssh') return;
 
       const combined = `${tails.get(sessionId) ?? ''}${chunk}`;
+      const previousTail = tails.get(sessionId) ?? '';
       tails.set(sessionId, combined.slice(-tailLimit));
+      // Jump-server menu lines are matched as output arrives (a deferred scan
+      // of the capped tail could miss one), but only over text not seen as a
+      // complete line yet: the unfinished last line plus this chunk.
+      if (!jumpServerSessions.has(sessionId) && chunk.length > 0) {
+        const lastBreak = Math.max(previousTail.lastIndexOf('\n'), previousTail.lastIndexOf('\r'));
+        const unscanned = `${previousTail.slice(lastBreak + 1)}${chunk}`;
+        if (
+          unscanned.includes('>')
+          && unscanned.split(/\r\n|\r|\n/u).some((line) => isJumpServerMenuLine(line))
+        ) {
+          jumpServerSessions.add(sessionId);
+        }
+      }
 
       if (analysisDelayMs === undefined || analysisDelayMs <= 0) {
         analyze(sessionId);
@@ -92,7 +113,7 @@ export function createPromptHostnameSessionSignalController({
       if (!detected) {
         if (isJumpServerMenuPrompt(tail) && published.has(sessionId)) {
           published.delete(sessionId);
-          onChange(sessionId, null);
+          onChange(sessionId, null, { fromJumpServer: true });
         }
         return;
       }
@@ -100,10 +121,12 @@ export function createPromptHostnameSessionSignalController({
       const detectedKey = normalizedHostname(detected);
       if (!detectedKey) return;
 
+      const fromJumpServer = jumpServerSessions.has(sessionId);
+      const publishKey = `${detectedKey}\0${fromJumpServer ? '1' : '0'}`;
       // Observe the prompt, not whether its hostname matches an IP or DNS alias.
       // The domain title policy decides if this presentation is shown.
-      if (published.get(sessionId) === detectedKey) return;
-      published.set(sessionId, detectedKey);
-      onChange(sessionId, detected);
+      if (published.get(sessionId) === publishKey) return;
+      published.set(sessionId, publishKey);
+      onChange(sessionId, detected, { fromJumpServer });
   }
 }
